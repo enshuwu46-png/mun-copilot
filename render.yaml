@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: mun-humanities-copilot
+    env: node
+    plan: starter
+    buildCommand: ""
+    startCommand: node server.js
+    disk:
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: OPENAI_MODEL
+        value: gpt-5
+      - key: PAYMENT_PROVIDER
+        value: stripe
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false

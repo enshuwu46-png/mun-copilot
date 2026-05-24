@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MUN / 文科 Copilot</title>
+    <link rel="stylesheet" href="/styles.css?v=20260524-3" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#workspace" aria-label="MUN / 文科 Copilot">
+        <span class="brand-mark">M</span>
+        <span>
+          <strong>MUN / 文科 Copilot</strong>
+          <small>学习训练与模联写作工作台</small>
+        </span>
+      </a>
+      <nav class="topnav" aria-label="主导航">
+        <a href="#workspace">工作台</a>
+        <a href="#pricing">套餐</a>
+        <a href="#admin">后台</a>
+      </nav>
+      <div class="account-box">
+        <span id="accountSummary" class="muted">未登录</span>
+        <button id="authButton" class="button primary" type="button">登录</button>
+        <button id="logoutButton" class="button ghost hidden" type="button">退出</button>
+      </div>
+    </header>
+
+    <main id="workspace" class="app-shell">
+      <aside class="tool-rail" aria-label="工具列表">
+        <div class="rail-heading">
+          <span>工具</span>
+          <small id="toolCount">7 个</small>
+        </div>
+        <div id="toolList" class="tool-list"></div>
+      </aside>
+
+      <section class="composer-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow" id="activeCost">每次 1 额度</p>
+            <h1 id="toolTitle">作文立意与修改</h1>
+          </div>
+          <button id="clearFormButton" class="icon-button" type="button" title="清空表单" aria-label="清空表单">×</button>
+        </div>
+        <form id="generatorForm" class="form-grid"></form>
+        <div class="form-actions">
+          <button id="generateButton" class="button primary wide" type="submit" form="generatorForm">生成</button>
+          <button id="sampleButton" class="button secondary" type="button">填入示例</button>
+        </div>
+      </section>
+
+      <aside class="side-stack">
+        <section class="usage-panel">
+          <div class="panel-heading compact">
+            <h2>额度</h2>
+            <a href="#pricing" class="text-link">购买</a>
+          </div>
+          <div class="meter">
+            <div id="usageBar" class="meter-fill"></div>
+          </div>
+          <div class="usage-grid">
+            <div>
+              <strong id="dailyRemaining">--</strong>
+              <span>今日剩余</span>
+            </div>
+            <div>
+              <strong id="extraCredits">--</strong>
+              <span>额外次数</span>
+            </div>
+            <div>
+              <strong id="planName">体验版</strong>
+              <span>当前套餐</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="model-panel">
+          <div class="panel-heading compact">
+            <h2>模型</h2>
+            <button id="testOpenAIButton" class="icon-button" type="button" title="检测 OpenAI" aria-label="检测 OpenAI">T</button>
+          </div>
+          <div class="status-row">
+            <span id="openaiStatusDot" class="status-dot"></span>
+            <strong id="openaiMode">检测中</strong>
+          </div>
+          <div id="openaiModel" class="model-value">--</div>
+          <p id="openaiHint" class="model-hint">正在读取服务器配置。</p>
+        </section>
+
+        <section class="result-panel">
+          <div class="panel-heading compact">
+            <h2>结果</h2>
+            <div class="mini-actions">
+              <button id="copyButton" class="icon-button" type="button" title="复制结果" aria-label="复制结果">C</button>
+              <button id="exportWordButton" class="icon-button" type="button" title="导出 Word" aria-label="导出 Word">W</button>
+              <button id="exportPptButton" class="icon-button" type="button" title="导出 PPT" aria-label="导出 PPT">P</button>
+            </div>
+          </div>
+          <pre id="resultBox" class="result-box">生成内容会出现在这里。</pre>
+        </section>
+      </aside>
+    </main>
+
+    <section id="checkoutPanel" class="checkout-panel hidden" aria-live="polite"></section>
+
+    <section id="pricing" class="pricing-section">
+      <div class="section-title">
+        <p class="eyebrow">套餐</p>
+        <h2>按额度收费，避免无限使用亏损</h2>
+      </div>
+      <div class="payment-row">
+        <label for="providerSelect">支付方式</label>
+        <select id="providerSelect">
+          <option value="">读取中</option>
+        </select>
+      </div>
+      <div id="paymentWarning" class="payment-warning"></div>
+      <div id="planGrid" class="plan-grid"></div>
+    </section>
+
+    <section id="history" class="history-section">
+      <div class="section-title">
+        <p class="eyebrow">记录</p>
+        <h2>最近生成</h2>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+
+    <section id="admin" class="admin-section">
+      <div class="section-title">
+        <p class="eyebrow">后台</p>
+        <h2>手动加额度和开通套餐</h2>
+      </div>
+      <form id="adminForm" class="admin-form">
+        <label>
+          后台密钥
+          <input name="adminSecret" type="password" autocomplete="off" placeholder="ADMIN_SECRET" />
+        </label>
+        <label>
+          用户邮箱
+          <input name="email" type="email" placeholder="student@example.com" />
+        </label>
+        <label>
+          开通套餐
+          <select name="planId">
+            <option value="">不变更</option>
+            <option value="starter">月卡</option>
+            <option value="pro">高级版</option>
+            <option value="club">社团版</option>
+          </select>
+        </label>
+        <label>
+          增加次数
+          <input name="credits" type="number" min="0" value="0" />
+        </label>
+        <button class="button primary" type="submit">提交</button>
+      </form>
+      <div id="adminMessage" class="admin-message"></div>
+    </section>
+
+    <dialog id="authDialog" class="auth-dialog">
+      <form id="authForm" method="dialog" class="auth-form">
+        <div class="panel-heading compact">
+          <h2 id="authTitle">登录</h2>
+          <button id="authCloseButton" class="icon-button" aria-label="关闭" type="button">×</button>
+        </div>
+        <label id="nameField">
+          昵称
+          <input name="name" autocomplete="name" placeholder="例如：MUN Delegate" />
+        </label>
+        <label>
+          邮箱
+          <input name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
+        </label>
+        <label>
+          密码
+          <input name="password" type="password" autocomplete="current-password" required minlength="6" />
+        </label>
+        <button id="authSubmit" class="button primary wide" type="submit" value="default">登录</button>
+        <button id="toggleAuthMode" class="button ghost wide" type="button">创建新账号</button>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js?v=20260524-3" defer></script>
+  </body>
+</html>

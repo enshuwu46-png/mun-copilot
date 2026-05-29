@@ -12,9 +12,21 @@ const PORT = Number(process.env.PORT || 3000);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const HOST = process.env.HOST || (IS_PRODUCTION ? "0.0.0.0" : "127.0.0.1");
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-5";
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://${HOST}:${PORT}`;
+const PRODUCTION_FRONTEND_BASE_URL = "https://ericeva0130.ccwu.cc";
+const PRODUCTION_API_BASE_URL = "https://qinghaxinyu.ccwu.cc";
+const LOCAL_BASE_URL = `http://${HOST}:${PORT}`;
+const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || process.env.PUBLIC_SITE_URL || (IS_PRODUCTION ? PRODUCTION_FRONTEND_BASE_URL : LOCAL_BASE_URL);
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_BASE_URL || (IS_PRODUCTION ? PRODUCTION_API_BASE_URL : LOCAL_BASE_URL);
+const ALLOWED_ORIGINS = parseOriginList(process.env.ALLOWED_ORIGINS || `${FRONTEND_BASE_URL},${PUBLIC_BASE_URL}`);
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, "data");
 const DB_FILE = process.env.DB_FILE ? path.resolve(process.env.DB_FILE) : path.join(DATA_DIR, "db.json");
+
+function parseOriginList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+}
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -281,6 +293,22 @@ function securityHeaders() {
   };
 }
 
+function originAllowed(origin) {
+  if (!origin) return false;
+  const cleanOrigin = String(origin).replace(/\/$/, "");
+  return ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(cleanOrigin);
+}
+
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (!originAllowed(origin)) return;
+  res.setHeader("access-control-allow-origin", origin);
+  res.setHeader("vary", "Origin");
+  res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type, authorization, x-admin-secret, stripe-signature, x-webhook-secret");
+  res.setHeader("access-control-max-age", "86400");
+}
+
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let raw = "";
@@ -497,9 +525,27 @@ function productionChecks() {
     },
     {
       id: "public_url",
-      label: "公网地址",
+      label: "后台 API 域名",
       ok: /^https:\/\//.test(PUBLIC_BASE_URL) || !IS_PRODUCTION,
       detail: PUBLIC_BASE_URL
+    },
+    {
+      id: "domain",
+      label: "前端网站域名",
+      ok: !IS_PRODUCTION || new URL(FRONTEND_BASE_URL).hostname === "ericeva0130.ccwu.cc",
+      detail: FRONTEND_BASE_URL
+    },
+    {
+      id: "api_domain",
+      label: "后台服务域名",
+      ok: !IS_PRODUCTION || new URL(PUBLIC_BASE_URL).hostname === "qinghaxinyu.ccwu.cc",
+      detail: PUBLIC_BASE_URL
+    },
+    {
+      id: "cors",
+      label: "API 跨域",
+      ok: !IS_PRODUCTION || ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(new URL(FRONTEND_BASE_URL).origin),
+      detail: ALLOWED_ORIGINS.join(", ") || "未配置"
     },
     {
       id: "payment",
@@ -562,6 +608,11 @@ function adminOverview(db) {
   });
 
   return {
+    endpoints: {
+      frontendBaseUrl: FRONTEND_BASE_URL,
+      apiBaseUrl: PUBLIC_BASE_URL,
+      stripeWebhookUrl: `${PUBLIC_BASE_URL}/api/payments/webhook`
+    },
     stats: {
       users: users.length,
       activeUsers: activeUsers.length,
@@ -781,8 +832,8 @@ async function createStripeCheckout(order, plan, user) {
   params.set("mode", "payment");
   params.set("client_reference_id", order.id);
   params.set("customer_email", user.email);
-  params.set("success_url", `${PUBLIC_BASE_URL}/#payment_success=${order.id}`);
-  params.set("cancel_url", `${PUBLIC_BASE_URL}/#pricing`);
+  params.set("success_url", `${FRONTEND_BASE_URL}/#payment_success=${order.id}`);
+  params.set("cancel_url", `${FRONTEND_BASE_URL}/#pricing`);
   params.set("line_items[0][quantity]", "1");
   params.set("line_items[0][price_data][currency]", "cny");
   params.set("line_items[0][price_data][unit_amount]", String(plan.priceCents));
@@ -959,7 +1010,7 @@ async function handleApi(req, res, pathname) {
       };
       db.orders[order.id] = order;
 
-      let checkoutUrl = `${PUBLIC_BASE_URL}/#checkout=${order.id}`;
+      let checkoutUrl = `${FRONTEND_BASE_URL}/#checkout=${order.id}`;
       let paymentNote = provider === "mock"
         ? "本地模拟支付，可在结算面板点击确认。"
         : "订单已创建。";
@@ -1163,6 +1214,12 @@ ensureDb();
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, PUBLIC_BASE_URL);
   if (url.pathname.startsWith("/api/")) {
+    applyCors(req, res);
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, securityHeaders());
+      res.end();
+      return;
+    }
     handleApi(req, res, url.pathname);
     return;
   }
@@ -1172,7 +1229,8 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`MUN / Humanities Copilot running at http://${HOST}:${PORT}`);
   console.log(`Mode: ${IS_PRODUCTION ? "production" : "development"}`);
-  console.log(`Public base URL: ${PUBLIC_BASE_URL}`);
+  console.log(`Frontend URL: ${FRONTEND_BASE_URL}`);
+  console.log(`API base URL: ${PUBLIC_BASE_URL}`);
   if (IS_PRODUCTION && !process.env.OPENAI_API_KEY) {
     console.warn("Warning: OPENAI_API_KEY is missing. The site will stay in demo mode.");
   }

@@ -34,7 +34,9 @@ ADMIN_SECRET=你的后台密钥
 NODE_ENV=production
 HOST=0.0.0.0
 DATA_DIR=/app/data
-PUBLIC_BASE_URL=https://你的公网域名
+FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 PAYMENT_PROVIDER=stripe
 STRIPE_SECRET_KEY=sk_live_or_test_...
@@ -68,10 +70,20 @@ ADMIN_SECRET=一串很长的随机密钥
 PAYMENT_PROVIDER=stripe
 STRIPE_SECRET_KEY=sk_live_xxx
 STRIPE_WEBHOOK_SECRET=whsec_xxx
-PUBLIC_BASE_URL=https://你的域名
+FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 ```
 
 创建订单接口会创建 Stripe Checkout Session。Webhook 会校验 `Stripe-Signature`，并在收到 `checkout.session.completed` 后自动给用户开通套餐或加额度。
+
+## 当前域名分工
+
+- 前端网站：`https://ericeva0130.ccwu.cc`
+- 后台/API：`https://qinghaxinyu.ccwu.cc`
+- Stripe Webhook：`https://qinghaxinyu.ccwu.cc/api/payments/webhook`
+
+当前前端会在 `ericeva0130.ccwu.cc` 自动请求 `qinghaxinyu.ccwu.cc` 的 API。后台服务已带 CORS 配置，生产环境要把 `ALLOWED_ORIGINS` 保持为这两个域名。
 
 ## 安全边界
 

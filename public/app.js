@@ -1,3 +1,10 @@
+const APP_CONFIG = window.MUN_COPILOT_CONFIG || {};
+const PRODUCTION_FRONTEND_HOST = "ericeva0130.ccwu.cc";
+const PRODUCTION_API_BASE_URL = "https://qinghaxinyu.ccwu.cc";
+const API_BASE_URL = String(
+  APP_CONFIG.apiBaseUrl || (window.location.hostname === PRODUCTION_FRONTEND_HOST ? PRODUCTION_API_BASE_URL : "")
+).replace(/\/$/, "");
+
 const TOOLS = [
   {
     id: "essay",
@@ -214,12 +221,13 @@ function activeTool() {
 }
 
 async function api(path, options = {}) {
+  const target = path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
   const headers = {
     "content-type": "application/json",
     ...(options.headers || {})
   };
   if (state.token) headers.authorization = `Bearer ${state.token}`;
-  const response = await fetch(path, {
+  const response = await fetch(target, {
     ...options,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined
@@ -632,6 +640,7 @@ async function loadAdminOverview() {
 function renderAdminDashboard(data) {
   const stats = data.stats || {};
   const checks = data.checks?.checks || [];
+  const endpoints = data.endpoints || {};
   const orders = data.orders || [];
   const users = data.users || [];
   const generations = data.generations || [];
@@ -654,6 +663,23 @@ function renderAdminDashboard(data) {
               <span>${escapeHtml(check.detail)}</span>
             </div>
           `).join("") || `<div class="empty-state">暂无检查项</div>`}
+        </div>
+      </section>
+      <section class="ops-panel">
+        <h3>上线地址</h3>
+        <div class="check-list">
+          <div class="check-item ok">
+            <strong>前端网站</strong>
+            <span>${escapeHtml(endpoints.frontendBaseUrl || "https://ericeva0130.ccwu.cc")}</span>
+          </div>
+          <div class="check-item ok">
+            <strong>后台 API</strong>
+            <span>${escapeHtml(endpoints.apiBaseUrl || "https://qinghaxinyu.ccwu.cc")}</span>
+          </div>
+          <div class="check-item ok">
+            <strong>支付回调</strong>
+            <span>${escapeHtml(endpoints.stripeWebhookUrl || "https://qinghaxinyu.ccwu.cc/api/payments/webhook")}</span>
+          </div>
         </div>
       </section>
       <section class="ops-panel">

@@ -20,13 +20,17 @@ services:
         value: gpt-5
       - key: PAYMENT_PROVIDER
         value: stripe
+      - key: FRONTEND_BASE_URL
+        value: https://ericeva0130.ccwu.cc
+      - key: PUBLIC_BASE_URL
+        value: https://qinghaxinyu.ccwu.cc
+      - key: ALLOWED_ORIGINS
+        value: https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
       - key: OPENAI_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: PUBLIC_BASE_URL
         sync: false
       - key: ADMIN_SECRET
         sync: false

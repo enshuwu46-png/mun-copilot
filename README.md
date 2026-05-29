@@ -20,6 +20,7 @@ npm start
 OPENAI_API_KEY=你的服务器端 API Key
 OPENAI_MODEL=gpt-5
 PAYMENT_PROVIDER=mock
+DATA_DIR=./data
 ADMIN_SECRET=你的后台密钥
 ```
 
@@ -32,6 +33,7 @@ ADMIN_SECRET=你的后台密钥
 ```bash
 NODE_ENV=production
 HOST=0.0.0.0
+DATA_DIR=/app/data
 PUBLIC_BASE_URL=https://你的公网域名
 OPENAI_API_KEY=sk-...
 PAYMENT_PROVIDER=stripe

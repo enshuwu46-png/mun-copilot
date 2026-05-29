@@ -8,13 +8,13 @@ const ROOT = __dirname;
 loadEnvFile(path.join(ROOT, ".env"));
 
 const PUBLIC_DIR = path.join(ROOT, "public");
-const DATA_DIR = path.join(ROOT, "data");
-const DB_FILE = path.join(DATA_DIR, "db.json");
 const PORT = Number(process.env.PORT || 3000);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const HOST = process.env.HOST || (IS_PRODUCTION ? "0.0.0.0" : "127.0.0.1");
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-5";
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://${HOST}:${PORT}`;
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, "data");
+const DB_FILE = process.env.DB_FILE ? path.resolve(process.env.DB_FILE) : path.join(DATA_DIR, "db.json");
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -242,7 +242,12 @@ function ensureDb() {
 
 function readDb() {
   ensureDb();
-  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+  const db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+  db.users ||= {};
+  db.sessions ||= {};
+  db.orders ||= {};
+  db.generations ||= [];
+  return db;
 }
 
 function writeDb(db) {
@@ -384,6 +389,7 @@ function requireAuth(req, res, db) {
   const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
   const session = db.sessions[bearer];
   if (!bearer || !session || new Date(session.expiresAt).getTime() < Date.now()) {
+    if (bearer && session) delete db.sessions[bearer];
     json(res, 401, { error: "请先登录" });
     return null;
   }
@@ -405,6 +411,18 @@ function requireAdmin(req, res, body) {
     return false;
   }
   return true;
+}
+
+function cleanupExpiredSessions(db) {
+  const now = Date.now();
+  let changed = false;
+  for (const [sessionToken, session] of Object.entries(db.sessions || {})) {
+    if (!session?.expiresAt || new Date(session.expiresAt).getTime() < now) {
+      delete db.sessions[sessionToken];
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 function applyPlanOrCredits(user, planId) {
@@ -466,6 +484,118 @@ function openAIStatus() {
     message: configured
       ? "OpenAI API 已配置，生成会调用真实模型。"
       : "当前是演示模式。在服务器 .env 配置 OPENAI_API_KEY 后重启即可调用真实模型。"
+  };
+}
+
+function productionChecks() {
+  const checks = [
+    {
+      id: "openai",
+      label: "OpenAI API",
+      ok: Boolean(process.env.OPENAI_API_KEY),
+      detail: process.env.OPENAI_API_KEY ? `已配置 ${DEFAULT_MODEL}` : "缺少 OPENAI_API_KEY，当前只能演示输出。"
+    },
+    {
+      id: "public_url",
+      label: "公网地址",
+      ok: /^https:\/\//.test(PUBLIC_BASE_URL) || !IS_PRODUCTION,
+      detail: PUBLIC_BASE_URL
+    },
+    {
+      id: "payment",
+      label: "真实支付",
+      ok: !IS_PRODUCTION || paymentProviders().some((provider) => provider.id === "stripe"),
+      detail: paymentProviders().length
+        ? paymentProviders().map((provider) => provider.name).join(" / ")
+        : "生产环境必须配置 STRIPE_SECRET_KEY 和 STRIPE_WEBHOOK_SECRET。"
+    },
+    {
+      id: "webhook",
+      label: "Stripe Webhook",
+      ok: !IS_PRODUCTION || Boolean(process.env.STRIPE_WEBHOOK_SECRET || process.env.PAYMENT_WEBHOOK_SECRET),
+      detail: process.env.STRIPE_WEBHOOK_SECRET ? "已配置签名密钥" : "缺少 STRIPE_WEBHOOK_SECRET。"
+    },
+    {
+      id: "admin_secret",
+      label: "后台密钥",
+      ok: Boolean(process.env.ADMIN_SECRET) && process.env.ADMIN_SECRET !== "change-this-admin-secret",
+      detail: process.env.ADMIN_SECRET && process.env.ADMIN_SECRET !== "change-this-admin-secret"
+        ? "已配置"
+        : "请把 ADMIN_SECRET 换成一串很长的随机密钥。"
+    },
+    {
+      id: "data",
+      label: "数据存储",
+      ok: fs.existsSync(DATA_DIR),
+      detail: DB_FILE
+    }
+  ];
+  return {
+    ok: checks.every((check) => check.ok),
+    checks
+  };
+}
+
+function centsToYuan(cents) {
+  return Number((Number(cents || 0) / 100).toFixed(2));
+}
+
+function adminOverview(db) {
+  const users = Object.values(db.users || {});
+  const orders = Object.values(db.orders || {});
+  const generations = db.generations || [];
+  const paidOrders = orders.filter((order) => order.status === "paid");
+  const pendingOrders = orders.filter((order) => order.status === "pending");
+  const now = Date.now();
+  const activeUsers = users.filter((user) =>
+    user.planExpiresAt && new Date(user.planExpiresAt).getTime() > now
+  );
+  const today = todayKey();
+  const todayGenerations = generations.filter((item) => {
+    if (!item.createdAt) return false;
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date(item.createdAt)) === today;
+  });
+
+  return {
+    stats: {
+      users: users.length,
+      activeUsers: activeUsers.length,
+      orders: orders.length,
+      pendingOrders: pendingOrders.length,
+      paidOrders: paidOrders.length,
+      revenueCents: paidOrders.reduce((sum, order) => sum + Number(order.amountCents || 0), 0),
+      revenueYuan: centsToYuan(paidOrders.reduce((sum, order) => sum + Number(order.amountCents || 0), 0)),
+      generations: generations.length,
+      todayGenerations: todayGenerations.length
+    },
+    checks: productionChecks(),
+    users: users
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 20)
+      .map(publicUser),
+    orders: orders
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 20)
+      .map((order) => ({
+        ...order,
+        userEmail: db.users[order.userId]?.email || "未知用户"
+      })),
+    generations: generations
+      .slice(-20)
+      .reverse()
+      .map((item) => ({
+        id: item.id,
+        userEmail: db.users[item.userId]?.email || "未知用户",
+        toolTitle: item.toolTitle,
+        model: item.model,
+        demo: item.demo,
+        createdAt: item.createdAt
+      }))
   };
 }
 
@@ -704,6 +834,7 @@ function contentTypeFor(filePath) {
 async function handleApi(req, res, pathname) {
   if (!checkRate(req, res)) return;
   const db = readDb();
+  const sessionsCleaned = cleanupExpiredSessions(db);
   const method = req.method;
   let body = {};
   if (method !== "GET") {
@@ -717,7 +848,14 @@ async function handleApi(req, res, pathname) {
 
   try {
     if (method === "GET" && pathname === "/api/health") {
-      json(res, 200, { ok: true, time: nowIso(), openai: openAIStatus() });
+      if (sessionsCleaned) writeDb(db);
+      json(res, 200, {
+        ok: true,
+        time: nowIso(),
+        mode: IS_PRODUCTION ? "production" : "development",
+        openai: openAIStatus(),
+        readiness: productionChecks()
+      });
       return;
     }
 
@@ -956,6 +1094,31 @@ async function handleApi(req, res, pathname) {
       }
       writeDb(db);
       json(res, 200, { user: publicUser(user) });
+      return;
+    }
+
+    if ((method === "GET" || method === "POST") && pathname === "/api/admin/overview") {
+      const url = new URL(req.url, PUBLIC_BASE_URL);
+      if (!requireAdmin(req, res, { adminSecret: body.adminSecret || url.searchParams.get("secret") })) return;
+      if (sessionsCleaned) writeDb(db);
+      json(res, 200, adminOverview(db));
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/admin/orders/confirm") {
+      if (!requireAdmin(req, res, body)) return;
+      const order = db.orders[body.orderId];
+      if (!order) throw new Error("订单不存在");
+      const user = db.users[order.userId];
+      if (!user) throw new Error("订单用户不存在");
+      if (order.status !== "paid") {
+        order.status = "paid";
+        order.paidAt = nowIso();
+        order.providerEvent = "admin_confirmed";
+        applyPlanOrCredits(user, order.planId);
+      }
+      writeDb(db);
+      json(res, 200, { order, user: publicUser(user), overview: adminOverview(db) });
       return;
     }
 

@@ -21,6 +21,7 @@ node server.js
 ```bash
 NODE_ENV=production
 HOST=0.0.0.0
+DATA_DIR=/app/data
 PUBLIC_BASE_URL=https://你的公网域名
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
@@ -33,6 +34,19 @@ ADMIN_SECRET=一串很长的随机密钥
 5. 部署完成后，打开 Render 给你的 `https://...onrender.com` 链接。
 
 `render.yaml` 已经配置了 `/app/data` 持久化磁盘，用来保存当前 JSON 数据库。后续用户变多时，再把它换成 PostgreSQL。
+
+## 上线前检查
+
+部署后打开网站底部的“运营后台”，输入 `ADMIN_SECRET`，点击“刷新运营看板”。生产自检里这些项都应该通过：
+
+- OpenAI API 已配置
+- 公网地址是 `https://...`
+- Stripe 支付已配置
+- Stripe Webhook 签名密钥已配置
+- 后台密钥不是默认值
+- 数据存储路径存在
+
+如果某项显示黄色警告，先修配置再推广。
 
 ## Stripe 支付配置
 
@@ -68,3 +82,4 @@ docker run -p 3000:3000 --env-file .env.production mun-copilot
 - 现在的数据存储是 `data/db.json`，适合早期试跑。真正多用户长期运营，建议下一步换成 PostgreSQL。
 - 不要把 `.env`、OpenAI Key、Stripe Secret 上传到 GitHub。
 - `PUBLIC_BASE_URL` 必须是用户实际访问的网站地址，否则 Stripe 支付成功后跳转会不对。
+- 后台可以查看用户、订单、营收、生成量，也可以手动确认人工收款订单。

@@ -516,7 +516,8 @@ select:focus {
 
 .pricing-section,
 .history-section,
-.admin-section {
+.admin-section,
+.legal-section {
   margin: 0 clamp(16px, 3vw, 34px) 22px;
   padding: 22px;
 }
@@ -647,6 +648,179 @@ select:focus {
   font-weight: 800;
 }
 
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.admin-dashboard {
+  margin-top: 16px;
+}
+
+.empty-state {
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fffdf8;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.stat-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.stat-card span,
+.stat-card strong {
+  display: block;
+}
+
+.stat-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stat-card strong {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  font-size: 24px;
+}
+
+.ops-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ops-panel {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.ops-panel h3 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.check-list {
+  display: grid;
+  gap: 8px;
+}
+
+.check-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.check-item.ok {
+  border-color: #9bd6c8;
+  background: var(--soft-teal);
+}
+
+.check-item.warn {
+  border-color: #f1c27b;
+  background: var(--soft-amber);
+}
+
+.check-item span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+}
+
+th,
+td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.compact-button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.legal-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.legal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.legal-grid article {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.legal-grid h3 {
+  margin: 0 0 10px;
+}
+
+.legal-grid p {
+  margin: 0 0 10px;
+  color: #364247;
+  line-height: 1.6;
+}
+
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 12px clamp(16px, 3vw, 34px) 28px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.site-footer span {
+  font-weight: 900;
+  color: var(--ink);
+}
+
 .auth-dialog {
   width: min(420px, calc(100vw - 28px));
   border: 1px solid var(--line);
@@ -729,7 +903,10 @@ select:focus {
   }
 
   .plan-grid,
-  .admin-form {
+  .admin-form,
+  .stat-grid,
+  .ops-grid,
+  .legal-grid {
     grid-template-columns: 1fr;
   }
 

@@ -192,6 +192,8 @@ const els = {
   historyList: document.querySelector("#historyList"),
   adminForm: document.querySelector("#adminForm"),
   adminMessage: document.querySelector("#adminMessage"),
+  refreshAdminButton: document.querySelector("#refreshAdminButton"),
+  adminDashboard: document.querySelector("#adminDashboard"),
   toast: document.querySelector("#toast")
 };
 
@@ -200,6 +202,11 @@ let authMode = "login";
 function money(cents) {
   if (!cents) return "免费";
   return `¥${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 1)}`;
+}
+
+function dateText(value) {
+  if (!value) return "--";
+  return new Date(value).toLocaleString();
 }
 
 function activeTool() {
@@ -591,9 +598,153 @@ async function handleAdmin(event) {
       body: values
     });
     els.adminMessage.textContent = `${data.user.email} 已更新：${data.user.planName}，额外 ${data.user.extraCredits} 次`;
+    await loadAdminOverview();
     showToast("后台操作完成");
   } catch (error) {
     els.adminMessage.textContent = error.message;
+    showToast(error.message);
+  }
+}
+
+function adminSecret() {
+  return String(new FormData(els.adminForm).get("adminSecret") || "").trim();
+}
+
+async function loadAdminOverview() {
+  const secret = adminSecret();
+  if (!secret) {
+    showToast("先填写后台密钥");
+    return;
+  }
+  try {
+    const data = await api("/api/admin/overview", {
+      method: "POST",
+      body: { adminSecret: secret }
+    });
+    renderAdminDashboard(data);
+    showToast("运营看板已刷新");
+  } catch (error) {
+    els.adminDashboard.innerHTML = `<div class="empty-state">${escapeHtml(error.message)}</div>`;
+    showToast(error.message);
+  }
+}
+
+function renderAdminDashboard(data) {
+  const stats = data.stats || {};
+  const checks = data.checks?.checks || [];
+  const orders = data.orders || [];
+  const users = data.users || [];
+  const generations = data.generations || [];
+  els.adminDashboard.innerHTML = `
+    <div class="stat-grid">
+      ${adminStat("用户", stats.users)}
+      ${adminStat("活跃套餐", stats.activeUsers)}
+      ${adminStat("待支付订单", stats.pendingOrders)}
+      ${adminStat("已付订单", stats.paidOrders)}
+      ${adminStat("营收", `¥${stats.revenueYuan || 0}`)}
+      ${adminStat("今日生成", stats.todayGenerations)}
+    </div>
+    <div class="ops-grid">
+      <section class="ops-panel">
+        <h3>生产自检</h3>
+        <div class="check-list">
+          ${checks.map((check) => `
+            <div class="check-item ${check.ok ? "ok" : "warn"}">
+              <strong>${escapeHtml(check.label)}</strong>
+              <span>${escapeHtml(check.detail)}</span>
+            </div>
+          `).join("") || `<div class="empty-state">暂无检查项</div>`}
+        </div>
+      </section>
+      <section class="ops-panel">
+        <h3>最近订单</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>用户</th><th>套餐</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              ${orders.map((order) => `
+                <tr>
+                  <td>${escapeHtml(order.userEmail)}</td>
+                  <td>${escapeHtml(order.planId)}</td>
+                  <td>${money(order.amountCents)}</td>
+                  <td>${escapeHtml(order.status)}</td>
+                  <td>
+                    ${order.status === "pending"
+                      ? `<button class="button ghost compact-button" type="button" data-confirm-order="${order.id}">确认到账</button>`
+                      : `<span class="muted">${dateText(order.paidAt)}</span>`}
+                  </td>
+                </tr>
+              `).join("") || `<tr><td colspan="5">暂无订单</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="ops-panel">
+        <h3>最近用户</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>邮箱</th><th>套餐</th><th>今日剩余</th><th>额外</th></tr></thead>
+            <tbody>
+              ${users.map((user) => `
+                <tr>
+                  <td>${escapeHtml(user.email)}</td>
+                  <td>${escapeHtml(user.planName)}</td>
+                  <td>${user.dailyRemaining}</td>
+                  <td>${user.extraCredits}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="4">暂无用户</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="ops-panel">
+        <h3>最近生成</h3>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>用户</th><th>工具</th><th>模型</th><th>时间</th></tr></thead>
+            <tbody>
+              ${generations.map((item) => `
+                <tr>
+                  <td>${escapeHtml(item.userEmail)}</td>
+                  <td>${escapeHtml(item.toolTitle)}</td>
+                  <td>${escapeHtml(item.model)}${item.demo ? " / demo" : ""}</td>
+                  <td>${dateText(item.createdAt)}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="4">暂无生成记录</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+  els.adminDashboard.querySelectorAll("[data-confirm-order]").forEach((button) => {
+    button.addEventListener("click", () => confirmAdminOrder(button.dataset.confirmOrder));
+  });
+}
+
+function adminStat(label, value) {
+  return `
+    <div class="stat-card">
+      <span>${label}</span>
+      <strong>${value ?? 0}</strong>
+    </div>
+  `;
+}
+
+async function confirmAdminOrder(orderId) {
+  const secret = adminSecret();
+  if (!secret) {
+    showToast("先填写后台密钥");
+    return;
+  }
+  try {
+    const data = await api("/api/admin/orders/confirm", {
+      method: "POST",
+      body: { adminSecret: secret, orderId }
+    });
+    renderAdminDashboard(data.overview);
+    showToast("订单已确认到账");
+  } catch (error) {
     showToast(error.message);
   }
 }
@@ -644,6 +795,7 @@ function bindEvents() {
   els.exportPptButton.addEventListener("click", exportPpt);
   els.testOpenAIButton.addEventListener("click", () => loadOpenAIStatus(true));
   els.adminForm.addEventListener("submit", handleAdmin);
+  els.refreshAdminButton.addEventListener("click", loadAdminOverview);
   window.addEventListener("hashchange", handleHashCheckout);
 }
 

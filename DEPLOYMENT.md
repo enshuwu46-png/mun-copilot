@@ -4,7 +4,7 @@
 
 1. 公网托管平台：Render、Railway、Fly.io、VPS 都可以。
 2. OpenAI API Key：填到服务器环境变量 `OPENAI_API_KEY`。
-3. 真实支付：推荐接微信支付 Native 扫码，填微信支付商户号、商户私钥、APIv3 密钥和平台公钥。
+3. 收款方式：没有营业执照先用人工收款；有商户号后再接微信支付 Native 扫码。
 
 ## 推荐方案：Cloudflare Pages + Pages Functions
 
@@ -51,13 +51,11 @@ PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
-PAYMENT_PROVIDER=wechat
-WECHAT_PAY_APP_ID=微信支付绑定的 AppID
-WECHAT_PAY_MCH_ID=微信支付商户号
-WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
-WECHAT_PAY_PRIVATE_KEY=商户 API 私钥 PEM
-WECHAT_PAY_API_V3_KEY=32 位 APIv3 密钥
-WECHAT_PAY_PUBLIC_KEY_PEM=微信支付平台公钥 PEM
+PAYMENT_PROVIDER=manual
+ALLOW_MANUAL_PAYMENT=true
+MANUAL_PAYMENT_NAME=人工收款
+MANUAL_PAYMENT_QR_IMAGE_URL=你的收款码图片链接
+MANUAL_PAYMENT_NOTE=付款时请备注订单号和注册邮箱
 ADMIN_SECRET=一串很长的随机密钥
 ```
 
@@ -110,13 +108,11 @@ PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
-PAYMENT_PROVIDER=wechat
-WECHAT_PAY_APP_ID=微信支付绑定的 AppID
-WECHAT_PAY_MCH_ID=微信支付商户号
-WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
-WECHAT_PAY_PRIVATE_KEY=商户 API 私钥 PEM
-WECHAT_PAY_API_V3_KEY=32 位 APIv3 密钥
-WECHAT_PAY_PUBLIC_KEY_PEM=微信支付平台公钥 PEM
+PAYMENT_PROVIDER=manual
+ALLOW_MANUAL_PAYMENT=true
+MANUAL_PAYMENT_NAME=人工收款
+MANUAL_PAYMENT_QR_IMAGE_URL=你的收款码图片链接
+MANUAL_PAYMENT_NOTE=付款时请备注订单号和注册邮箱
 ADMIN_SECRET=一串很长的随机密钥
 ```
 
@@ -147,14 +143,31 @@ https://qinghaxinyu.ccwu.cc/api/...
 
 - OpenAI API 已配置
 - 公网地址是 `https://...`
-- 微信支付已配置
-- 微信支付回调验签和解密已配置
+- 收款方式已配置
+- 人工收款不需要支付平台回调，微信支付才需要回调验签
 - 后台密钥不是默认值
 - 数据存储路径存在
 
 如果某项显示黄色警告，先修配置再推广。
 
-## 微信支付配置
+## 没有营业执照：人工收款
+
+先在 Cloudflare Pages 的 Variables and Secrets 中设置：
+
+```bash
+PAYMENT_PROVIDER=manual
+ALLOW_MANUAL_PAYMENT=true
+MANUAL_PAYMENT_NAME=人工收款
+MANUAL_PAYMENT_QR_IMAGE_URL=https://你的收款码图片地址
+MANUAL_PAYMENT_ACCOUNT=你的微信/支付宝收款账号说明
+MANUAL_PAYMENT_NOTE=付款时请备注订单号和注册邮箱。管理员确认到账后开通。
+```
+
+前端会显示订单号、付款说明和收款码图片。用户付款后，进入运营后台，在“最近订单”里点“确认到账”即可开通套餐。
+
+个人收款适合早期小范围验证。正式长期经营时，建议补齐主体资质后接微信支付商户 API 或其他合规支付服务。
+
+## 有商户号后：微信支付配置
 
 在微信支付商户平台准备这些参数：
 
@@ -165,12 +178,6 @@ AppID
 商户 API 私钥 PEM
 APIv3 密钥
 微信支付平台公钥 PEM
-```
-
-把支付通知地址填为：
-
-```text
-https://qinghaxinyu.ccwu.cc/api/payments/wechat/notify
 ```
 
 Cloudflare Pages 的 Variables and Secrets 中至少添加：
@@ -187,14 +194,6 @@ WECHAT_PAY_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-
 
 前端会显示微信支付二维码。微信支付通知到达后，后端会验签、解密通知资源、校验金额和商户号，然后自动给用户开通套餐或加额度。
 
-如果你暂时没有微信支付商户号，可以临时设置：
-
-```bash
-ALLOW_MANUAL_PAYMENT=true
-```
-
-这样前端会允许用户创建“人工收款”订单，后台手动点“确认到账”后开通。
-
 ## Docker 部署
 
 ```bash
@@ -207,6 +206,6 @@ docker run -p 3000:3000 --env-file .env.production mun-copilot
 - 现在的数据存储是 `data/db.json`，适合早期试跑。真正多用户长期运营，建议下一步换成 PostgreSQL。
 - 不要把 `.env`、OpenAI Key、微信支付私钥/APIv3 密钥上传到 GitHub。
 - `FRONTEND_BASE_URL` 必须是用户实际访问的前端网站地址。
-- `PUBLIC_BASE_URL` 是后台/API 的公网地址，微信支付回调和跨域请求会用到它。
+- `PUBLIC_BASE_URL` 是后台/API 的公网地址，微信支付回调和跨域请求会用到它；人工收款只需要后台能访问。
 - `ALLOWED_ORIGINS` 至少包含 `https://ericeva0130.ccwu.cc`，否则前端会被浏览器拦截跨域请求。
 - 后台可以查看用户、订单、营收、生成量，也可以手动确认人工收款订单。

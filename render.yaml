@@ -19,7 +19,13 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5
       - key: PAYMENT_PROVIDER
-        value: wechat
+        value: manual
+      - key: ALLOW_MANUAL_PAYMENT
+        value: "true"
+      - key: MANUAL_PAYMENT_NAME
+        value: 人工收款
+      - key: MANUAL_PAYMENT_DESCRIPTION
+        value: 扫码或转账后由管理员确认到账。
       - key: FRONTEND_BASE_URL
         value: https://ericeva0130.ccwu.cc
       - key: PUBLIC_BASE_URL

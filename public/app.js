@@ -397,7 +397,7 @@ function renderPaymentProviders() {
   if (!state.paymentProviders.length) {
     els.providerSelect.innerHTML = `<option value="">支付未配置</option>`;
     els.providerSelect.disabled = true;
-    els.paymentWarning.textContent = "服务器还没有配置真实支付方式。生产上线请配置微信支付商户号、商户私钥、APIv3 密钥和平台公钥。";
+    els.paymentWarning.textContent = "服务器还没有启用收款方式。没有营业执照时，可以先启用人工收款，由后台确认到账。";
     return;
   }
   els.providerSelect.disabled = false;
@@ -538,6 +538,9 @@ function renderCheckout(order, note = "", payment = order.payment || {}) {
   const plan = state.plans.find((item) => item.id === order.planId);
   const safeCodeUrl = payment.codeUrl ? escapeHtml(payment.codeUrl) : "";
   const safeQrUrl = payment.codeUrl ? escapeHtml(qrImageUrl(payment.codeUrl)) : "";
+  const safeManualQr = payment.qrImageUrl ? escapeHtml(payment.qrImageUrl) : "";
+  const safeManualAccount = payment.account ? escapeHtml(payment.account) : "";
+  const safeManualNote = payment.note ? escapeHtml(payment.note) : "";
   const wechatBlock = order.provider === "wechat" && payment.codeUrl
     ? `
       <div class="wechat-pay-box">
@@ -550,6 +553,20 @@ function renderCheckout(order, note = "", payment = order.payment || {}) {
       </div>
     `
     : "";
+  const manualBlock = order.provider === "manual"
+    ? `
+      <div class="wechat-pay-box">
+        ${safeManualQr ? `<img class="wechat-qr" src="${safeManualQr}" alt="收款二维码">` : ""}
+        <div class="wechat-pay-copy">
+          <strong>${escapeHtml(payment.name || "人工收款")}</strong>
+          <span>付款金额：${money(order.amountCents)}。付款备注：${escapeHtml(payment.orderMemo || order.id)}</span>
+          ${safeManualAccount ? `<span>收款账号：${safeManualAccount}</span>` : ""}
+          <span>${safeManualNote || "付款后等待管理员确认到账。"}</span>
+          <code>${escapeHtml(payment.orderMemo || order.id)}</code>
+        </div>
+      </div>
+    `
+    : "";
   const action = order.provider === "mock"
     ? `<button class="button primary" type="button" id="confirmMockPayment">确认模拟支付</button>`
     : order.provider === "wechat" && payment.codeUrl
@@ -558,6 +575,11 @@ function renderCheckout(order, note = "", payment = order.payment || {}) {
           <button class="button ghost" type="button" id="copyPaymentLink">复制链接</button>
           <button class="button ghost" type="button" id="refreshPaymentStatus">刷新状态</button>
         </div>`
+      : order.provider === "manual"
+        ? `<div class="checkout-actions">
+            <button class="button primary" type="button" id="copyOrderMemo">复制订单号</button>
+            <button class="button ghost" type="button" id="refreshPaymentStatus">刷新状态</button>
+          </div>`
       : `<a class="button primary" href="#admin">等待到账</a>`;
   els.checkoutPanel.classList.remove("hidden");
   els.checkoutPanel.innerHTML = `
@@ -566,12 +588,14 @@ function renderCheckout(order, note = "", payment = order.payment || {}) {
         <strong>订单 ${order.id}</strong>
         <div class="muted">${plan?.name || order.planId} · ${money(order.amountCents)} · ${note}</div>
         ${wechatBlock}
+        ${manualBlock}
       </div>
       ${action}
     </div>
   `;
   document.querySelector("#confirmMockPayment")?.addEventListener("click", () => confirmMockPayment(order.id));
   document.querySelector("#copyPaymentLink")?.addEventListener("click", () => copyPaymentLink(payment.codeUrl));
+  document.querySelector("#copyOrderMemo")?.addEventListener("click", () => copyPaymentLink(payment.orderMemo || order.id, "订单号已复制"));
   document.querySelector("#refreshPaymentStatus")?.addEventListener("click", () => refreshOrderStatus(order.id));
 }
 
@@ -579,9 +603,9 @@ function qrImageUrl(value) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(value)}`;
 }
 
-async function copyPaymentLink(value) {
+async function copyPaymentLink(value, message = "支付链接已复制") {
   await navigator.clipboard.writeText(value || "");
-  showToast("支付链接已复制");
+  showToast(message);
 }
 
 async function refreshOrderStatus(orderId) {

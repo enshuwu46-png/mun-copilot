@@ -522,7 +522,7 @@ function productionChecks() {
     ? wechatPayReady().webhook
     : defaultProvider === "stripe"
       ? stripeWebhookReady
-      : !IS_PRODUCTION;
+      : defaultProvider === "manual" || !IS_PRODUCTION;
   const checks = [
     {
       id: "openai",
@@ -557,10 +557,10 @@ function productionChecks() {
     {
       id: "payment",
       label: "真实支付",
-      ok: !IS_PRODUCTION || paymentProviders().some((provider) => ["wechat", "stripe"].includes(provider.id)),
+      ok: !IS_PRODUCTION || paymentProviders().some((provider) => ["manual", "wechat", "stripe"].includes(provider.id)),
       detail: paymentProviders().length
         ? paymentProviders().map((provider) => provider.name).join(" / ")
-        : "生产环境必须配置微信支付或 Stripe。"
+        : "生产环境必须配置人工收款、微信支付或 Stripe。"
     },
     {
       id: "webhook",
@@ -570,7 +570,9 @@ function productionChecks() {
         ? "微信支付回调验签和解密已配置"
         : stripeWebhookReady && defaultProvider === "stripe"
           ? "Stripe Webhook 已配置"
-          : "缺少微信支付 APIv3 密钥/公钥或 Stripe Webhook 密钥。"
+          : defaultProvider === "manual"
+            ? "人工收款由后台确认，不需要支付平台回调。"
+            : "缺少微信支付 APIv3 密钥/公钥或 Stripe Webhook 密钥。"
     },
     {
       id: "admin_secret",
@@ -686,18 +688,19 @@ function paymentProviders() {
       description: "真实在线支付，成功后自动到账。"
     });
   }
-  if (process.env.ALLOW_MANUAL_PAYMENT === "true") {
+  if (manualPaymentEnabled()) {
+    const manual = manualPaymentConfig();
     providers.push({
       id: "manual",
-      name: "人工收款",
-      description: "提交订单后由管理员线下确认到账。"
+      name: manual.name,
+      description: manual.description
     });
   }
   return providers;
 }
 
 function defaultPaymentProvider() {
-  const configured = process.env.PAYMENT_PROVIDER || (IS_PRODUCTION ? "wechat" : "mock");
+  const configured = process.env.PAYMENT_PROVIDER || (IS_PRODUCTION ? "manual" : "mock");
   const enabled = paymentProviders();
   if (enabled.some((provider) => provider.id === configured)) return configured;
   return enabled[0]?.id || "";
@@ -751,6 +754,21 @@ function publicKeyFromCertificate(certPem) {
 
 function isWechatPayNotification(headers, body) {
   return Boolean(headers["wechatpay-signature"] || headers["wechatpay-timestamp"] || body?.resource?.ciphertext);
+}
+
+function manualPaymentConfig() {
+  return {
+    name: process.env.MANUAL_PAYMENT_NAME || "人工收款",
+    description: process.env.MANUAL_PAYMENT_DESCRIPTION || "扫码或转账后由管理员确认到账。",
+    qrImageUrl: process.env.MANUAL_PAYMENT_QR_IMAGE_URL || "",
+    account: process.env.MANUAL_PAYMENT_ACCOUNT || "",
+    note: process.env.MANUAL_PAYMENT_NOTE || "付款时请备注订单号和注册邮箱。管理员确认到账后，套餐会自动开通。"
+  };
+}
+
+function manualPaymentEnabled() {
+  const manual = manualPaymentConfig();
+  return process.env.ALLOW_MANUAL_PAYMENT === "true" || Boolean(manual.qrImageUrl || manual.account);
 }
 
 function verifyStripeWebhookSignature(rawBody, signature, secret, toleranceSeconds = 300) {
@@ -1024,6 +1042,25 @@ function handleWeChatPayNotification(db, body, rawBody, headers) {
   return order;
 }
 
+function createManualPayment(order, plan, user) {
+  const manual = manualPaymentConfig();
+  const payment = {
+    type: "manual",
+    name: manual.name,
+    qrImageUrl: manual.qrImageUrl,
+    account: manual.account,
+    note: manual.note,
+    orderMemo: order.id,
+    userEmail: user.email,
+    amountCents: plan.priceCents
+  };
+  order.providerPayload = payment;
+  return {
+    checkoutUrl: `${FRONTEND_BASE_URL}/#checkout=${order.id}`,
+    payment
+  };
+}
+
 function listPlans() {
   return Object.values(PLANS).map((plan) => ({
     id: plan.id,
@@ -1191,11 +1228,14 @@ async function handleApi(req, res, pathname) {
         order.payment = wechatCheckout.payment;
         paymentNote = "微信支付二维码已生成，请用微信扫码付款。";
       } else if (provider === "manual") {
-        paymentNote = "人工收款订单已创建。管理员确认收款后会加额度。";
+        const manualCheckout = createManualPayment(order, plan, auth.user);
+        checkoutUrl = manualCheckout.checkoutUrl;
+        order.payment = manualCheckout.payment;
+        paymentNote = "人工收款订单已创建。付款后由管理员确认到账。";
       }
 
       writeDb(db);
-      json(res, 201, { order, checkoutUrl, paymentNote });
+      json(res, 201, { order, checkoutUrl, paymentNote, payment: order.payment || null });
       return;
     }
 

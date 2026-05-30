@@ -42,17 +42,15 @@ FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
-PAYMENT_PROVIDER=wechat
-WECHAT_PAY_APP_ID=微信支付绑定的 AppID
-WECHAT_PAY_MCH_ID=微信支付商户号
-WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
-WECHAT_PAY_PRIVATE_KEY=商户 API 私钥 PEM
-WECHAT_PAY_API_V3_KEY=32 位 APIv3 密钥
-WECHAT_PAY_PUBLIC_KEY_PEM=微信支付平台公钥 PEM
+PAYMENT_PROVIDER=manual
+ALLOW_MANUAL_PAYMENT=true
+MANUAL_PAYMENT_NAME=人工收款
+MANUAL_PAYMENT_QR_IMAGE_URL=你的收款码图片链接
+MANUAL_PAYMENT_NOTE=付款时请备注订单号和注册邮箱
 ADMIN_SECRET=一串很长的随机密钥
 ```
 
-生产环境会禁用模拟支付。没有完整配置微信支付时，前端不会显示可用的真实支付方式。
+生产环境会禁用模拟支付。没有营业执照时，先用人工收款：用户下单后扫码/转账，你在后台确认到账，系统再开通套餐。
 
 ## 已有接口
 
@@ -64,6 +62,7 @@ ADMIN_SECRET=一串很长的随机密钥
 - `POST /api/orders` 创建订单
 - `GET /api/orders` 我的订单
 - `POST /api/payments/mock/confirm` 本地模拟支付确认
+- 人工收款订单由 `POST /api/admin/orders/confirm` 后台确认到账
 - `POST /api/payments/wechat/notify` 微信支付回调
 - `POST /api/payments/webhook` Stripe/通用支付回调兼容入口
 - `POST /api/generate` AI 生成
@@ -71,9 +70,24 @@ ADMIN_SECRET=一串很长的随机密钥
 - `POST /api/admin/grant` 后台加额度/开套餐
 - `GET /api/admin/users` 后台用户列表
 
-## 微信支付怎么接
+## 没有营业执照怎么收款
 
-本地默认 `PAYMENT_PROVIDER=mock`。生产环境推荐使用微信支付 Native 扫码：
+先用人工收款，不接微信支付商户 API：
+
+```bash
+PAYMENT_PROVIDER=manual
+ALLOW_MANUAL_PAYMENT=true
+MANUAL_PAYMENT_NAME=人工收款
+MANUAL_PAYMENT_QR_IMAGE_URL=https://你的收款码图片地址
+MANUAL_PAYMENT_ACCOUNT=你的微信/支付宝收款账号说明
+MANUAL_PAYMENT_NOTE=付款时请备注订单号和注册邮箱。管理员确认到账后开通。
+```
+
+前端会显示订单号、付款说明和收款码图片。用户付款后，你在运营后台的“最近订单”里点“确认到账”。
+
+## 有商户号后怎么接微信支付
+
+有营业执照和微信支付商户号后，可以切回微信支付 Native 扫码：
 
 ```bash
 PAYMENT_PROVIDER=wechat

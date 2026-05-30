@@ -8,7 +8,10 @@ FRONTEND_BASE_URL = "https://ericeva0130.ccwu.cc"
 PUBLIC_BASE_URL = "https://qinghaxinyu.ccwu.cc"
 ALLOWED_ORIGINS = "https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc"
 OPENAI_MODEL = "gpt-5"
-PAYMENT_PROVIDER = "wechat"
+PAYMENT_PROVIDER = "manual"
+ALLOW_MANUAL_PAYMENT = "true"
+MANUAL_PAYMENT_NAME = "人工收款"
+MANUAL_PAYMENT_DESCRIPTION = "扫码或转账后由管理员确认到账。"
 
 [[kv_namespaces]]
 binding = "MUN_DB"

@@ -328,11 +328,14 @@ async function handleApi(request, env) {
       order.payment = wechatCheckout.payment;
       paymentNote = "微信支付二维码已生成，请用微信扫码付款。";
     } else if (provider === "manual") {
-      paymentNote = "人工收款订单已创建。管理员确认收款后会加额度。";
+      const manualCheckout = createManualPayment(env, order, plan, auth.user);
+      checkoutUrl = manualCheckout.checkoutUrl;
+      order.payment = manualCheckout.payment;
+      paymentNote = "人工收款订单已创建。付款后由管理员确认到账。";
     }
 
     await writeDb(env, db);
-    return json(request, env, 201, { order, checkoutUrl, paymentNote });
+    return json(request, env, 201, { order, checkoutUrl, paymentNote, payment: order.payment || null });
   }
 
   if (method === "GET" && pathname === "/api/orders") {
@@ -689,12 +692,15 @@ function paymentProviders(env) {
   if (!isProduction(env)) providers.push({ id: "mock", name: "模拟支付", description: "本地测试使用，生产环境禁用。" });
   if (wechatPayReady(env).orders) providers.push({ id: "wechat", name: "微信支付", description: "微信 Native 扫码支付，用户付款后自动开通套餐。" });
   if (env.STRIPE_SECRET_KEY) providers.push({ id: "stripe", name: "Stripe", description: "真实在线支付，成功后自动到账。" });
-  if (env.ALLOW_MANUAL_PAYMENT === "true") providers.push({ id: "manual", name: "人工收款", description: "提交订单后由管理员线下确认到账。" });
+  if (manualPaymentEnabled(env)) {
+    const manual = manualPaymentConfig(env);
+    providers.push({ id: "manual", name: manual.name, description: manual.description });
+  }
   return providers;
 }
 
 function defaultPaymentProvider(env) {
-  const configured = env.PAYMENT_PROVIDER || (isProduction(env) ? "wechat" : "mock");
+  const configured = env.PAYMENT_PROVIDER || (isProduction(env) ? "manual" : "mock");
   const enabled = paymentProviders(env);
   if (enabled.some((provider) => provider.id === configured)) return configured;
   return enabled[0]?.id || "";
@@ -769,6 +775,21 @@ function readDerElement(bytes, offset) {
 
 function isWechatPayNotification(headers, body) {
   return Boolean(headers.get("wechatpay-signature") || headers.get("wechatpay-timestamp") || body?.resource?.ciphertext);
+}
+
+function manualPaymentConfig(env) {
+  return {
+    name: env.MANUAL_PAYMENT_NAME || "人工收款",
+    description: env.MANUAL_PAYMENT_DESCRIPTION || "扫码或转账后由管理员确认到账。",
+    qrImageUrl: env.MANUAL_PAYMENT_QR_IMAGE_URL || "",
+    account: env.MANUAL_PAYMENT_ACCOUNT || "",
+    note: env.MANUAL_PAYMENT_NOTE || "付款时请备注订单号和注册邮箱。管理员确认到账后，套餐会自动开通。"
+  };
+}
+
+function manualPaymentEnabled(env) {
+  const manual = manualPaymentConfig(env);
+  return env.ALLOW_MANUAL_PAYMENT === "true" || Boolean(manual.qrImageUrl || manual.account);
 }
 
 function validateToolInput(toolId, fields) {
@@ -992,6 +1013,25 @@ async function handleWeChatPayNotification(env, db, body, rawBody, headers) {
   return order;
 }
 
+function createManualPayment(env, order, plan, user) {
+  const manual = manualPaymentConfig(env);
+  const payment = {
+    type: "manual",
+    name: manual.name,
+    qrImageUrl: manual.qrImageUrl,
+    account: manual.account,
+    note: manual.note,
+    orderMemo: order.id,
+    userEmail: user.email,
+    amountCents: plan.priceCents
+  };
+  order.providerPayload = payment;
+  return {
+    checkoutUrl: `${frontendBaseUrl(env)}/#checkout=${order.id}`,
+    payment
+  };
+}
+
 function productionChecks(env) {
   const defaultProvider = defaultPaymentProvider(env);
   const stripeWebhookReady = Boolean(env.STRIPE_WEBHOOK_SECRET || env.PAYMENT_WEBHOOK_SECRET);
@@ -999,7 +1039,7 @@ function productionChecks(env) {
     ? wechatPayReady(env).webhook
     : defaultProvider === "stripe"
       ? stripeWebhookReady
-      : !isProduction(env);
+      : defaultProvider === "manual" || !isProduction(env);
   const checks = [
     { id: "openai", label: "OpenAI API", ok: Boolean(env.OPENAI_API_KEY), detail: env.OPENAI_API_KEY ? `已配置 ${env.OPENAI_MODEL || "gpt-5"}` : "缺少 OPENAI_API_KEY，当前只能演示输出。" },
     { id: "kv", label: "Cloudflare KV", ok: Boolean(env.MUN_DB), detail: env.MUN_DB ? "已绑定 MUN_DB" : "缺少 KV 绑定 MUN_DB。" },
@@ -1007,8 +1047,8 @@ function productionChecks(env) {
     { id: "domain", label: "前端网站域名", ok: !isProduction(env) || new URL(frontendBaseUrl(env)).hostname === "ericeva0130.ccwu.cc", detail: frontendBaseUrl(env) },
     { id: "api_domain", label: "后台服务域名", ok: !isProduction(env) || new URL(apiBaseUrl(env)).hostname === "qinghaxinyu.ccwu.cc", detail: apiBaseUrl(env) },
     { id: "cors", label: "API 跨域", ok: !isProduction(env) || allowedOrigins(env).includes("*") || allowedOrigins(env).includes(new URL(frontendBaseUrl(env)).origin), detail: allowedOrigins(env).join(", ") || "未配置" },
-    { id: "payment", label: "真实支付", ok: !isProduction(env) || paymentProviders(env).some((provider) => ["wechat", "stripe"].includes(provider.id)), detail: paymentProviders(env).length ? paymentProviders(env).map((provider) => provider.name).join(" / ") : "生产环境必须配置微信支付或 Stripe。" },
-    { id: "webhook", label: "支付回调", ok: !isProduction(env) || paymentWebhookReady, detail: wechatPayReady(env).webhook ? "微信支付回调验签和解密已配置" : stripeWebhookReady && defaultProvider === "stripe" ? "Stripe Webhook 已配置" : "缺少微信支付 APIv3 密钥/公钥或 Stripe Webhook 密钥。" },
+    { id: "payment", label: "真实支付", ok: !isProduction(env) || paymentProviders(env).some((provider) => ["manual", "wechat", "stripe"].includes(provider.id)), detail: paymentProviders(env).length ? paymentProviders(env).map((provider) => provider.name).join(" / ") : "生产环境必须配置人工收款、微信支付或 Stripe。" },
+    { id: "webhook", label: "支付回调", ok: !isProduction(env) || paymentWebhookReady, detail: wechatPayReady(env).webhook ? "微信支付回调验签和解密已配置" : stripeWebhookReady && defaultProvider === "stripe" ? "Stripe Webhook 已配置" : defaultProvider === "manual" ? "人工收款由后台确认，不需要支付平台回调。" : "缺少微信支付 APIv3 密钥/公钥或 Stripe Webhook 密钥。" },
     { id: "admin_secret", label: "后台密钥", ok: Boolean(env.ADMIN_SECRET) && env.ADMIN_SECRET !== "change-this-admin-secret", detail: env.ADMIN_SECRET && env.ADMIN_SECRET !== "change-this-admin-secret" ? "已配置" : "请把 ADMIN_SECRET 换成一串很长的随机密钥。" }
   ];
   return { ok: checks.every((check) => check.ok), checks };

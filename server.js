@@ -305,7 +305,7 @@ function applyCors(req, res) {
   res.setHeader("access-control-allow-origin", origin);
   res.setHeader("vary", "Origin");
   res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type, authorization, x-admin-secret, stripe-signature, x-webhook-secret");
+  res.setHeader("access-control-allow-headers", "content-type, authorization, x-admin-secret, stripe-signature, x-webhook-secret, wechatpay-signature, wechatpay-timestamp, wechatpay-nonce, wechatpay-serial, wechatpay-signature-type");
   res.setHeader("access-control-max-age", "86400");
 }
 
@@ -516,6 +516,13 @@ function openAIStatus() {
 }
 
 function productionChecks() {
+  const defaultProvider = defaultPaymentProvider();
+  const stripeWebhookReady = Boolean(process.env.STRIPE_WEBHOOK_SECRET || process.env.PAYMENT_WEBHOOK_SECRET);
+  const paymentWebhookReady = defaultProvider === "wechat"
+    ? wechatPayReady().webhook
+    : defaultProvider === "stripe"
+      ? stripeWebhookReady
+      : !IS_PRODUCTION;
   const checks = [
     {
       id: "openai",
@@ -550,16 +557,20 @@ function productionChecks() {
     {
       id: "payment",
       label: "真实支付",
-      ok: !IS_PRODUCTION || paymentProviders().some((provider) => provider.id === "stripe"),
+      ok: !IS_PRODUCTION || paymentProviders().some((provider) => ["wechat", "stripe"].includes(provider.id)),
       detail: paymentProviders().length
         ? paymentProviders().map((provider) => provider.name).join(" / ")
-        : "生产环境必须配置 STRIPE_SECRET_KEY 和 STRIPE_WEBHOOK_SECRET。"
+        : "生产环境必须配置微信支付或 Stripe。"
     },
     {
       id: "webhook",
-      label: "Stripe Webhook",
-      ok: !IS_PRODUCTION || Boolean(process.env.STRIPE_WEBHOOK_SECRET || process.env.PAYMENT_WEBHOOK_SECRET),
-      detail: process.env.STRIPE_WEBHOOK_SECRET ? "已配置签名密钥" : "缺少 STRIPE_WEBHOOK_SECRET。"
+      label: "支付回调",
+      ok: !IS_PRODUCTION || paymentWebhookReady,
+      detail: wechatPayReady().webhook
+        ? "微信支付回调验签和解密已配置"
+        : stripeWebhookReady && defaultProvider === "stripe"
+          ? "Stripe Webhook 已配置"
+          : "缺少微信支付 APIv3 密钥/公钥或 Stripe Webhook 密钥。"
     },
     {
       id: "admin_secret",
@@ -611,6 +622,8 @@ function adminOverview(db) {
     endpoints: {
       frontendBaseUrl: FRONTEND_BASE_URL,
       apiBaseUrl: PUBLIC_BASE_URL,
+      paymentWebhookUrl: `${PUBLIC_BASE_URL}/api/payments/wechat/notify`,
+      wechatWebhookUrl: `${PUBLIC_BASE_URL}/api/payments/wechat/notify`,
       stripeWebhookUrl: `${PUBLIC_BASE_URL}/api/payments/webhook`
     },
     stats: {
@@ -659,6 +672,13 @@ function paymentProviders() {
       description: "本地测试使用，生产环境禁用。"
     });
   }
+  if (wechatPayReady().orders) {
+    providers.push({
+      id: "wechat",
+      name: "微信支付",
+      description: "微信 Native 扫码支付，用户付款后自动开通套餐。"
+    });
+  }
   if (process.env.STRIPE_SECRET_KEY) {
     providers.push({
       id: "stripe",
@@ -677,7 +697,7 @@ function paymentProviders() {
 }
 
 function defaultPaymentProvider() {
-  const configured = process.env.PAYMENT_PROVIDER || (IS_PRODUCTION ? "stripe" : "mock");
+  const configured = process.env.PAYMENT_PROVIDER || (IS_PRODUCTION ? "wechat" : "mock");
   const enabled = paymentProviders();
   if (enabled.some((provider) => provider.id === configured)) return configured;
   return enabled[0]?.id || "";
@@ -690,6 +710,47 @@ function assertPaymentProvider(provider) {
   if (!paymentProviders().some((item) => item.id === provider)) {
     throw new Error("支付方式未配置，请检查服务器环境变量");
   }
+}
+
+function wechatPayConfig() {
+  return {
+    appId: process.env.WECHAT_PAY_APP_ID || process.env.WECHAT_PAY_APPID || "",
+    mchId: process.env.WECHAT_PAY_MCH_ID || process.env.WECHAT_PAY_MCHID || "",
+    serialNo: process.env.WECHAT_PAY_MCH_SERIAL_NO || process.env.WECHAT_PAY_SERIAL_NO || "",
+    privateKey: pemFromEnv("WECHAT_PAY_PRIVATE_KEY") || pemFromEnv("WECHAT_PAY_PRIVATE_KEY_BASE64", true),
+    apiV3Key: process.env.WECHAT_PAY_API_V3_KEY || "",
+    publicKey: pemFromEnv("WECHAT_PAY_PUBLIC_KEY_PEM") || pemFromEnv("WECHAT_PAY_PUBLIC_KEY_BASE64", true) || publicKeyFromCertificate(pemFromEnv("WECHAT_PAY_PLATFORM_CERT_PEM") || pemFromEnv("WECHAT_PAY_PLATFORM_CERT_BASE64", true)),
+    notifyUrl: process.env.WECHAT_PAY_NOTIFY_URL || `${PUBLIC_BASE_URL}/api/payments/wechat/notify`
+  };
+}
+
+function wechatPayReady() {
+  const config = wechatPayConfig();
+  return {
+    orders: Boolean(config.appId && config.mchId && config.serialNo && config.privateKey && config.apiV3Key),
+    webhook: Boolean(config.apiV3Key && config.publicKey)
+  };
+}
+
+function pemFromEnv(name, base64 = false) {
+  const value = process.env[name];
+  if (!value) return "";
+  const decoded = base64 ? Buffer.from(value, "base64").toString("utf8") : value;
+  return decoded.replace(/\\n/g, "\n").trim();
+}
+
+function publicKeyFromCertificate(certPem) {
+  if (!certPem) return "";
+  try {
+    const publicKey = crypto.createPublicKey(certPem);
+    return publicKey.export({ type: "spki", format: "pem" });
+  } catch {
+    return "";
+  }
+}
+
+function isWechatPayNotification(headers, body) {
+  return Boolean(headers["wechatpay-signature"] || headers["wechatpay-timestamp"] || body?.resource?.ciphertext);
 }
 
 function verifyStripeWebhookSignature(rawBody, signature, secret, toleranceSeconds = 300) {
@@ -856,6 +917,113 @@ async function createStripeCheckout(order, plan, user) {
   return data.url;
 }
 
+async function createWeChatNativeOrder(order, plan) {
+  const config = wechatPayConfig();
+  if (!wechatPayReady().orders) {
+    throw new Error("未完整配置微信支付，需填写 WECHAT_PAY_APP_ID、WECHAT_PAY_MCH_ID、WECHAT_PAY_MCH_SERIAL_NO、WECHAT_PAY_PRIVATE_KEY、WECHAT_PAY_API_V3_KEY");
+  }
+
+  const requestPath = "/v3/pay/transactions/native";
+  const payload = {
+    appid: config.appId,
+    mchid: config.mchId,
+    description: `MUN Copilot ${plan.name}`.slice(0, 127),
+    out_trade_no: order.id,
+    attach: order.id,
+    notify_url: config.notifyUrl,
+    amount: {
+      total: plan.priceCents,
+      currency: "CNY"
+    }
+  };
+  const bodyText = JSON.stringify(payload);
+  const authorization = createWeChatPayAuthorization("POST", requestPath, bodyText, config);
+  const response = await fetch(`https://api.mch.weixin.qq.com${requestPath}`, {
+    method: "POST",
+    headers: {
+      authorization,
+      accept: "application/json",
+      "content-type": "application/json"
+    },
+    body: bodyText
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || data.code || "微信支付下单失败");
+  }
+  if (!data.code_url) throw new Error("微信支付没有返回二维码链接");
+  order.providerPayload = {
+    codeUrl: data.code_url,
+    notifyUrl: config.notifyUrl,
+    createdAt: nowIso()
+  };
+  return {
+    checkoutUrl: `${FRONTEND_BASE_URL}/#checkout=${order.id}`,
+    payment: {
+      type: "wechat_native",
+      codeUrl: data.code_url,
+      notifyUrl: config.notifyUrl
+    }
+  };
+}
+
+function createWeChatPayAuthorization(method, requestPath, bodyText, config) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const message = `${method}\n${requestPath}\n${timestamp}\n${nonce}\n${bodyText}\n`;
+  const signature = crypto.sign("RSA-SHA256", Buffer.from(message, "utf8"), config.privateKey).toString("base64");
+  return `WECHATPAY2-SHA256-RSA2048 mchid="${config.mchId}",nonce_str="${nonce}",timestamp="${timestamp}",serial_no="${config.serialNo}",signature="${signature}"`;
+}
+
+function verifyWeChatPaySignature(rawBody, headers) {
+  const config = wechatPayConfig();
+  if (!config.publicKey) return false;
+  const timestamp = headers["wechatpay-timestamp"];
+  const nonce = headers["wechatpay-nonce"];
+  const signature = headers["wechatpay-signature"];
+  if (!timestamp || !nonce || !signature) return false;
+  const message = `${timestamp}\n${nonce}\n${rawBody}\n`;
+  return crypto.verify("RSA-SHA256", Buffer.from(message, "utf8"), config.publicKey, Buffer.from(signature, "base64"));
+}
+
+function decryptWeChatPayResource(resource) {
+  const config = wechatPayConfig();
+  if (!config.apiV3Key) throw new Error("缺少 WECHAT_PAY_API_V3_KEY，无法解密微信支付通知");
+  if (resource?.algorithm !== "AEAD_AES_256_GCM") throw new Error("不支持的微信支付通知加密算法");
+  const encrypted = Buffer.from(resource.ciphertext || "", "base64");
+  if (encrypted.length <= 16) throw new Error("微信支付通知密文无效");
+  const ciphertext = encrypted.subarray(0, encrypted.length - 16);
+  const authTag = encrypted.subarray(encrypted.length - 16);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", Buffer.from(config.apiV3Key, "utf8"), Buffer.from(resource.nonce || "", "utf8"));
+  decipher.setAAD(Buffer.from(resource.associated_data || "", "utf8"));
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  return JSON.parse(decrypted);
+}
+
+function handleWeChatPayNotification(db, body, rawBody, headers) {
+  if (IS_PRODUCTION && !verifyWeChatPaySignature(rawBody, headers)) {
+    throw new Error("微信支付通知签名验证失败，请配置 WECHAT_PAY_PUBLIC_KEY_PEM 或 WECHAT_PAY_PLATFORM_CERT_PEM");
+  }
+  const transaction = decryptWeChatPayResource(body.resource || {});
+  const orderId = transaction.out_trade_no || transaction.attach;
+  const order = db.orders[orderId];
+  if (!order) throw new Error("订单不存在");
+  if (order.provider !== "wechat") throw new Error("订单支付方式不匹配");
+  if (transaction.mchid && transaction.mchid !== wechatPayConfig().mchId) throw new Error("微信支付商户号不匹配");
+  if (Number(transaction.amount?.total) !== Number(order.amountCents)) throw new Error("微信支付金额不匹配");
+  order.providerEvent = body.event_type || transaction.trade_state || "wechatpay_notify";
+  order.transactionId = transaction.transaction_id || order.transactionId;
+  order.wechatTradeState = transaction.trade_state || "";
+  if (transaction.trade_state === "SUCCESS" && order.status !== "paid") {
+    const user = db.users[order.userId];
+    order.status = "paid";
+    order.paidAt = nowIso();
+    applyPlanOrCredits(user, order.planId);
+  }
+  return order;
+}
+
 function listPlans() {
   return Object.values(PLANS).map((plan) => ({
     id: plan.id,
@@ -1017,6 +1185,11 @@ async function handleApi(req, res, pathname) {
       if (provider === "stripe") {
         checkoutUrl = await createStripeCheckout(order, plan, auth.user);
         paymentNote = "已创建 Stripe Checkout Session。";
+      } else if (provider === "wechat") {
+        const wechatCheckout = await createWeChatNativeOrder(order, plan);
+        checkoutUrl = wechatCheckout.checkoutUrl;
+        order.payment = wechatCheckout.payment;
+        paymentNote = "微信支付二维码已生成，请用微信扫码付款。";
       } else if (provider === "manual") {
         paymentNote = "人工收款订单已创建。管理员确认收款后会加额度。";
       }
@@ -1052,7 +1225,13 @@ async function handleApi(req, res, pathname) {
       return;
     }
 
-    if (method === "POST" && pathname === "/api/payments/webhook") {
+    if (method === "POST" && (pathname === "/api/payments/webhook" || pathname === "/api/payments/wechat/notify")) {
+      if (isWechatPayNotification(req.headers, body)) {
+        handleWeChatPayNotification(db, body, req.rawBody || "", req.headers);
+        writeDb(db);
+        json(res, 200, { code: "SUCCESS", message: "成功" });
+        return;
+      }
       const stripeSecret = process.env.STRIPE_WEBHOOK_SECRET || process.env.PAYMENT_WEBHOOK_SECRET;
       const stripeSignature = req.headers["stripe-signature"];
       if (stripeSignature || IS_PRODUCTION) {
@@ -1235,6 +1414,6 @@ server.listen(PORT, HOST, () => {
     console.warn("Warning: OPENAI_API_KEY is missing. The site will stay in demo mode.");
   }
   if (IS_PRODUCTION && !paymentProviders().length) {
-    console.warn("Warning: no production payment provider is configured. Set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET.");
+    console.warn("Warning: no production payment provider is configured. Set WeChat Pay credentials or Stripe credentials.");
   }
 });

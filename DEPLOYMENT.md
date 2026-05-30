@@ -4,7 +4,7 @@
 
 1. 公网托管平台：Render、Railway、Fly.io、VPS 都可以。
 2. OpenAI API Key：填到服务器环境变量 `OPENAI_API_KEY`。
-3. 真实支付：推荐先接 Stripe Checkout，填 `STRIPE_SECRET_KEY` 和 `STRIPE_WEBHOOK_SECRET`。
+3. 真实支付：推荐接微信支付 Native 扫码，填微信支付商户号、商户私钥、APIv3 密钥和平台公钥。
 
 ## 推荐方案：Cloudflare Pages + Pages Functions
 
@@ -51,9 +51,13 @@ PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
-PAYMENT_PROVIDER=stripe
-STRIPE_SECRET_KEY=sk_live_or_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+PAYMENT_PROVIDER=wechat
+WECHAT_PAY_APP_ID=微信支付绑定的 AppID
+WECHAT_PAY_MCH_ID=微信支付商户号
+WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
+WECHAT_PAY_PRIVATE_KEY=商户 API 私钥 PEM
+WECHAT_PAY_API_V3_KEY=32 位 APIv3 密钥
+WECHAT_PAY_PUBLIC_KEY_PEM=微信支付平台公钥 PEM
 ADMIN_SECRET=一串很长的随机密钥
 ```
 
@@ -106,9 +110,13 @@ PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
-PAYMENT_PROVIDER=stripe
-STRIPE_SECRET_KEY=sk_live_or_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+PAYMENT_PROVIDER=wechat
+WECHAT_PAY_APP_ID=微信支付绑定的 AppID
+WECHAT_PAY_MCH_ID=微信支付商户号
+WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
+WECHAT_PAY_PRIVATE_KEY=商户 API 私钥 PEM
+WECHAT_PAY_API_V3_KEY=32 位 APIv3 密钥
+WECHAT_PAY_PUBLIC_KEY_PEM=微信支付平台公钥 PEM
 ADMIN_SECRET=一串很长的随机密钥
 ```
 
@@ -139,34 +147,53 @@ https://qinghaxinyu.ccwu.cc/api/...
 
 - OpenAI API 已配置
 - 公网地址是 `https://...`
-- Stripe 支付已配置
-- Stripe Webhook 签名密钥已配置
+- 微信支付已配置
+- 微信支付回调验签和解密已配置
 - 后台密钥不是默认值
 - 数据存储路径存在
 
 如果某项显示黄色警告，先修配置再推广。
 
-## Stripe 支付配置
+## 微信支付配置
 
-在 Stripe Dashboard 创建 webhook endpoint：
-
-```text
-https://qinghaxinyu.ccwu.cc/api/payments/webhook
-```
-
-订阅事件：
+在微信支付商户平台准备这些参数：
 
 ```text
-checkout.session.completed
+AppID
+商户号 MCH_ID
+商户 API 证书序列号
+商户 API 私钥 PEM
+APIv3 密钥
+微信支付平台公钥 PEM
 ```
 
-把 Stripe 给你的 Signing secret 填到：
+把支付通知地址填为：
+
+```text
+https://qinghaxinyu.ccwu.cc/api/payments/wechat/notify
+```
+
+Cloudflare Pages 的 Variables and Secrets 中至少添加：
 
 ```bash
-STRIPE_WEBHOOK_SECRET=whsec_...
+PAYMENT_PROVIDER=wechat
+WECHAT_PAY_APP_ID=wx...
+WECHAT_PAY_MCH_ID=1900000001
+WECHAT_PAY_MCH_SERIAL_NO=...
+WECHAT_PAY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+WECHAT_PAY_API_V3_KEY=32位APIv3密钥
+WECHAT_PAY_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 ```
 
-生产环境下，模拟支付会被禁用；只有配置好的真实支付方式会显示在前端。
+前端会显示微信支付二维码。微信支付通知到达后，后端会验签、解密通知资源、校验金额和商户号，然后自动给用户开通套餐或加额度。
+
+如果你暂时没有微信支付商户号，可以临时设置：
+
+```bash
+ALLOW_MANUAL_PAYMENT=true
+```
+
+这样前端会允许用户创建“人工收款”订单，后台手动点“确认到账”后开通。
 
 ## Docker 部署
 
@@ -178,8 +205,8 @@ docker run -p 3000:3000 --env-file .env.production mun-copilot
 ## 重要提醒
 
 - 现在的数据存储是 `data/db.json`，适合早期试跑。真正多用户长期运营，建议下一步换成 PostgreSQL。
-- 不要把 `.env`、OpenAI Key、Stripe Secret 上传到 GitHub。
-- `FRONTEND_BASE_URL` 必须是用户实际访问的前端网站地址，否则 Stripe 支付成功后跳转会不对。
-- `PUBLIC_BASE_URL` 是后台/API 的公网地址，Stripe webhook 和跨域请求会用到它。
+- 不要把 `.env`、OpenAI Key、微信支付私钥/APIv3 密钥上传到 GitHub。
+- `FRONTEND_BASE_URL` 必须是用户实际访问的前端网站地址。
+- `PUBLIC_BASE_URL` 是后台/API 的公网地址，微信支付回调和跨域请求会用到它。
 - `ALLOWED_ORIGINS` 至少包含 `https://ericeva0130.ccwu.cc`，否则前端会被浏览器拦截跨域请求。
 - 后台可以查看用户、订单、营收、生成量，也可以手动确认人工收款订单。

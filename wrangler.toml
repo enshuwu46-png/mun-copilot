@@ -8,7 +8,7 @@ FRONTEND_BASE_URL = "https://ericeva0130.ccwu.cc"
 PUBLIC_BASE_URL = "https://qinghaxinyu.ccwu.cc"
 ALLOWED_ORIGINS = "https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc"
 OPENAI_MODEL = "gpt-5"
-PAYMENT_PROVIDER = "stripe"
+PAYMENT_PROVIDER = "wechat"
 
 [[kv_namespaces]]
 binding = "MUN_DB"

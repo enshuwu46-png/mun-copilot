@@ -42,13 +42,17 @@ FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
-PAYMENT_PROVIDER=stripe
-STRIPE_SECRET_KEY=sk_live_or_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+PAYMENT_PROVIDER=wechat
+WECHAT_PAY_APP_ID=微信支付绑定的 AppID
+WECHAT_PAY_MCH_ID=微信支付商户号
+WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
+WECHAT_PAY_PRIVATE_KEY=商户 API 私钥 PEM
+WECHAT_PAY_API_V3_KEY=32 位 APIv3 密钥
+WECHAT_PAY_PUBLIC_KEY_PEM=微信支付平台公钥 PEM
 ADMIN_SECRET=一串很长的随机密钥
 ```
 
-生产环境会禁用模拟支付。没有配置 `STRIPE_SECRET_KEY` 时，前端不会显示可用的真实支付方式。
+生产环境会禁用模拟支付。没有完整配置微信支付时，前端不会显示可用的真实支付方式。
 
 ## 已有接口
 
@@ -60,32 +64,37 @@ ADMIN_SECRET=一串很长的随机密钥
 - `POST /api/orders` 创建订单
 - `GET /api/orders` 我的订单
 - `POST /api/payments/mock/confirm` 本地模拟支付确认
-- `POST /api/payments/webhook` 支付回调占位
+- `POST /api/payments/wechat/notify` 微信支付回调
+- `POST /api/payments/webhook` Stripe/通用支付回调兼容入口
 - `POST /api/generate` AI 生成
 - `GET /api/history` 生成历史
 - `POST /api/admin/grant` 后台加额度/开套餐
 - `GET /api/admin/users` 后台用户列表
 
-## 真实支付怎么接
+## 微信支付怎么接
 
-本地默认 `PAYMENT_PROVIDER=mock`。生产环境请使用 Stripe：
+本地默认 `PAYMENT_PROVIDER=mock`。生产环境推荐使用微信支付 Native 扫码：
 
 ```bash
-PAYMENT_PROVIDER=stripe
-STRIPE_SECRET_KEY=sk_live_xxx
-STRIPE_WEBHOOK_SECRET=whsec_xxx
+PAYMENT_PROVIDER=wechat
+WECHAT_PAY_APP_ID=wx...
+WECHAT_PAY_MCH_ID=1900000001
+WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
+WECHAT_PAY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+WECHAT_PAY_API_V3_KEY=32位APIv3密钥
+WECHAT_PAY_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 ```
 
-创建订单接口会创建 Stripe Checkout Session。Webhook 会校验 `Stripe-Signature`，并在收到 `checkout.session.completed` 后自动给用户开通套餐或加额度。
+创建订单接口会调用微信支付 API v3 Native 下单，前端显示微信二维码。微信支付通知会先验签，再用 `WECHAT_PAY_API_V3_KEY` 解密通知资源；确认 `trade_state=SUCCESS`、金额和商户号一致后自动给用户开通套餐或加额度。
 
 ## 当前域名分工
 
 - 前端网站：`https://ericeva0130.ccwu.cc`
 - 后台/API：`https://qinghaxinyu.ccwu.cc`
-- Stripe Webhook：`https://qinghaxinyu.ccwu.cc/api/payments/webhook`
+- 微信支付回调：`https://qinghaxinyu.ccwu.cc/api/payments/wechat/notify`
 
 当前前端会在 `ericeva0130.ccwu.cc` 自动请求 `qinghaxinyu.ccwu.cc` 的 API。后台服务已带 CORS 配置，生产环境要把 `ALLOWED_ORIGINS` 保持为这两个域名。
 

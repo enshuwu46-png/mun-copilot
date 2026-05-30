@@ -397,7 +397,7 @@ function renderPaymentProviders() {
   if (!state.paymentProviders.length) {
     els.providerSelect.innerHTML = `<option value="">支付未配置</option>`;
     els.providerSelect.disabled = true;
-    els.paymentWarning.textContent = "服务器还没有配置真实支付方式。生产上线请配置 STRIPE_SECRET_KEY 和 STRIPE_WEBHOOK_SECRET。";
+    els.paymentWarning.textContent = "服务器还没有配置真实支付方式。生产上线请配置微信支付商户号、商户私钥、APIv3 密钥和平台公钥。";
     return;
   }
   els.providerSelect.disabled = false;
@@ -527,29 +527,77 @@ async function buyPlan(planId) {
       window.location.href = data.checkoutUrl;
       return;
     }
-    renderCheckout(data.order, data.paymentNote);
+    renderCheckout(data.order, data.paymentNote, data.payment);
     showToast("订单已创建");
   } catch (error) {
     showToast(error.message);
   }
 }
 
-function renderCheckout(order, note = "") {
+function renderCheckout(order, note = "", payment = order.payment || {}) {
   const plan = state.plans.find((item) => item.id === order.planId);
+  const safeCodeUrl = payment.codeUrl ? escapeHtml(payment.codeUrl) : "";
+  const safeQrUrl = payment.codeUrl ? escapeHtml(qrImageUrl(payment.codeUrl)) : "";
+  const wechatBlock = order.provider === "wechat" && payment.codeUrl
+    ? `
+      <div class="wechat-pay-box">
+        <img class="wechat-qr" src="${safeQrUrl}" alt="微信支付二维码">
+        <div class="wechat-pay-copy">
+          <strong>打开微信扫一扫</strong>
+          <span>付款成功后稍等几秒，系统会通过微信支付回调自动到账。</span>
+          <code>${safeCodeUrl}</code>
+        </div>
+      </div>
+    `
+    : "";
   const action = order.provider === "mock"
     ? `<button class="button primary" type="button" id="confirmMockPayment">确认模拟支付</button>`
-    : `<a class="button primary" href="#admin">等待到账</a>`;
+    : order.provider === "wechat" && payment.codeUrl
+      ? `<div class="checkout-actions">
+          <a class="button primary" href="${safeCodeUrl}">打开微信支付</a>
+          <button class="button ghost" type="button" id="copyPaymentLink">复制链接</button>
+          <button class="button ghost" type="button" id="refreshPaymentStatus">刷新状态</button>
+        </div>`
+      : `<a class="button primary" href="#admin">等待到账</a>`;
   els.checkoutPanel.classList.remove("hidden");
   els.checkoutPanel.innerHTML = `
     <div class="checkout-panel-inner">
       <div>
         <strong>订单 ${order.id}</strong>
         <div class="muted">${plan?.name || order.planId} · ${money(order.amountCents)} · ${note}</div>
+        ${wechatBlock}
       </div>
       ${action}
     </div>
   `;
   document.querySelector("#confirmMockPayment")?.addEventListener("click", () => confirmMockPayment(order.id));
+  document.querySelector("#copyPaymentLink")?.addEventListener("click", () => copyPaymentLink(payment.codeUrl));
+  document.querySelector("#refreshPaymentStatus")?.addEventListener("click", () => refreshOrderStatus(order.id));
+}
+
+function qrImageUrl(value) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(value)}`;
+}
+
+async function copyPaymentLink(value) {
+  await navigator.clipboard.writeText(value || "");
+  showToast("支付链接已复制");
+}
+
+async function refreshOrderStatus(orderId) {
+  try {
+    const data = await api("/api/orders");
+    const order = (data.orders || []).find((item) => item.id === orderId);
+    if (order?.status === "paid") {
+      await refreshMe();
+      els.checkoutPanel.classList.add("hidden");
+      showToast("支付已到账，套餐已开通");
+      return;
+    }
+    showToast("还没收到微信支付回调");
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function confirmMockPayment(orderId) {
@@ -678,7 +726,7 @@ function renderAdminDashboard(data) {
           </div>
           <div class="check-item ok">
             <strong>支付回调</strong>
-            <span>${escapeHtml(endpoints.stripeWebhookUrl || "https://qinghaxinyu.ccwu.cc/api/payments/webhook")}</span>
+            <span>${escapeHtml(endpoints.paymentWebhookUrl || endpoints.wechatWebhookUrl || "https://qinghaxinyu.ccwu.cc/api/payments/wechat/notify")}</span>
           </div>
         </div>
       </section>

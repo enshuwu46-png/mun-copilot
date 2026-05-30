@@ -19,7 +19,7 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5
       - key: PAYMENT_PROVIDER
-        value: stripe
+        value: wechat
       - key: FRONTEND_BASE_URL
         value: https://ericeva0130.ccwu.cc
       - key: PUBLIC_BASE_URL
@@ -28,9 +28,17 @@ services:
         value: https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
       - key: OPENAI_API_KEY
         sync: false
-      - key: STRIPE_SECRET_KEY
+      - key: WECHAT_PAY_APP_ID
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      - key: WECHAT_PAY_MCH_ID
+        sync: false
+      - key: WECHAT_PAY_MCH_SERIAL_NO
+        sync: false
+      - key: WECHAT_PAY_PRIVATE_KEY
+        sync: false
+      - key: WECHAT_PAY_API_V3_KEY
+        sync: false
+      - key: WECHAT_PAY_PUBLIC_KEY_PEM
         sync: false
       - key: ADMIN_SECRET
         sync: false

@@ -514,6 +514,55 @@ select:focus {
   align-items: center;
 }
 
+.checkout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wechat-pay-box {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  max-width: 620px;
+  margin-top: 14px;
+}
+
+.wechat-qr {
+  width: 136px;
+  height: 136px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.wechat-pay-copy {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.wechat-pay-copy strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.wechat-pay-copy code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--ink);
+  font-size: 12px;
+}
+
 .pricing-section,
 .history-section,
 .admin-section,
@@ -913,6 +962,19 @@ th {
   .checkout-panel-inner,
   .form-actions {
     grid-template-columns: 1fr;
+  }
+
+  .checkout-actions {
+    justify-content: stretch;
+  }
+
+  .checkout-actions .button {
+    flex: 1 1 160px;
+  }
+
+  .wechat-pay-box {
+    grid-template-columns: 1fr;
+    justify-items: start;
   }
 }
 

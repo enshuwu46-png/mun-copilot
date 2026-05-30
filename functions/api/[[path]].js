@@ -322,6 +322,11 @@ async function handleApi(request, env) {
     if (provider === "stripe") {
       checkoutUrl = await createStripeCheckout(env, order, plan, auth.user);
       paymentNote = "已创建 Stripe Checkout Session。";
+    } else if (provider === "wechat") {
+      const wechatCheckout = await createWeChatNativeOrder(env, order, plan);
+      checkoutUrl = wechatCheckout.checkoutUrl;
+      order.payment = wechatCheckout.payment;
+      paymentNote = "微信支付二维码已生成，请用微信扫码付款。";
     } else if (provider === "manual") {
       paymentNote = "人工收款订单已创建。管理员确认收款后会加额度。";
     }
@@ -352,7 +357,12 @@ async function handleApi(request, env) {
     return json(request, env, 200, { order, user: publicUser(auth.user) });
   }
 
-  if (method === "POST" && pathname === "/api/payments/webhook") {
+  if (method === "POST" && (pathname === "/api/payments/webhook" || pathname === "/api/payments/wechat/notify")) {
+    if (isWechatPayNotification(request.headers, body)) {
+      await handleWeChatPayNotification(env, db, body, rawBody, request.headers);
+      await writeDb(env, db);
+      return json(request, env, 200, { code: "SUCCESS", message: "成功" });
+    }
     const stripeSecret = env.STRIPE_WEBHOOK_SECRET || env.PAYMENT_WEBHOOK_SECRET;
     const stripeSignature = request.headers.get("stripe-signature");
     if (stripeSignature || isProduction(env)) {
@@ -474,7 +484,7 @@ function headers(request, env, extra = {}) {
     h["access-control-allow-origin"] = origin;
     h.vary = "Origin";
     h["access-control-allow-methods"] = "GET, POST, OPTIONS";
-    h["access-control-allow-headers"] = "content-type, authorization, x-admin-secret, stripe-signature, x-webhook-secret";
+    h["access-control-allow-headers"] = "content-type, authorization, x-admin-secret, stripe-signature, x-webhook-secret, wechatpay-signature, wechatpay-timestamp, wechatpay-nonce, wechatpay-serial, wechatpay-signature-type";
     h["access-control-max-age"] = "86400";
   }
   return h;
@@ -677,13 +687,14 @@ function listPlans() {
 function paymentProviders(env) {
   const providers = [];
   if (!isProduction(env)) providers.push({ id: "mock", name: "模拟支付", description: "本地测试使用，生产环境禁用。" });
+  if (wechatPayReady(env).orders) providers.push({ id: "wechat", name: "微信支付", description: "微信 Native 扫码支付，用户付款后自动开通套餐。" });
   if (env.STRIPE_SECRET_KEY) providers.push({ id: "stripe", name: "Stripe", description: "真实在线支付，成功后自动到账。" });
   if (env.ALLOW_MANUAL_PAYMENT === "true") providers.push({ id: "manual", name: "人工收款", description: "提交订单后由管理员线下确认到账。" });
   return providers;
 }
 
 function defaultPaymentProvider(env) {
-  const configured = env.PAYMENT_PROVIDER || (isProduction(env) ? "stripe" : "mock");
+  const configured = env.PAYMENT_PROVIDER || (isProduction(env) ? "wechat" : "mock");
   const enabled = paymentProviders(env);
   if (enabled.some((provider) => provider.id === configured)) return configured;
   return enabled[0]?.id || "";
@@ -692,6 +703,72 @@ function defaultPaymentProvider(env) {
 function assertPaymentProvider(env, provider) {
   if (provider === "mock" && isProduction(env)) throw new HttpError(400, "生产环境已禁用模拟支付，请配置真实支付方式");
   if (!paymentProviders(env).some((item) => item.id === provider)) throw new HttpError(400, "支付方式未配置，请检查服务器环境变量");
+}
+
+function wechatPayConfig(env) {
+  const certificatePem = pemFromEnv(env, "WECHAT_PAY_PLATFORM_CERT_PEM") || pemFromEnv(env, "WECHAT_PAY_PLATFORM_CERT_BASE64", true);
+  return {
+    appId: env.WECHAT_PAY_APP_ID || env.WECHAT_PAY_APPID || "",
+    mchId: env.WECHAT_PAY_MCH_ID || env.WECHAT_PAY_MCHID || "",
+    serialNo: env.WECHAT_PAY_MCH_SERIAL_NO || env.WECHAT_PAY_SERIAL_NO || "",
+    privateKey: pemFromEnv(env, "WECHAT_PAY_PRIVATE_KEY") || pemFromEnv(env, "WECHAT_PAY_PRIVATE_KEY_BASE64", true),
+    apiV3Key: env.WECHAT_PAY_API_V3_KEY || "",
+    publicKey: pemFromEnv(env, "WECHAT_PAY_PUBLIC_KEY_PEM") || pemFromEnv(env, "WECHAT_PAY_PUBLIC_KEY_BASE64", true) || publicKeyFromCertificate(certificatePem),
+    notifyUrl: env.WECHAT_PAY_NOTIFY_URL || `${apiBaseUrl(env)}/api/payments/wechat/notify`
+  };
+}
+
+function wechatPayReady(env) {
+  const config = wechatPayConfig(env);
+  return {
+    orders: Boolean(config.appId && config.mchId && config.serialNo && config.privateKey && config.apiV3Key),
+    webhook: Boolean(config.apiV3Key && config.publicKey)
+  };
+}
+
+function pemFromEnv(env, name, base64 = false) {
+  const value = env[name];
+  if (!value) return "";
+  const decoded = base64 ? bytesToUtf8(base64ToBytes(value)) : String(value);
+  return decoded.replace(/\\n/g, "\n").trim();
+}
+
+function publicKeyFromCertificate(certPem) {
+  if (!certPem) return "";
+  try {
+    const der = pemToBytes(certPem, "CERTIFICATE");
+    const certificate = readDerElement(der, 0);
+    const tbs = readDerElement(der, certificate.contentStart);
+    let offset = tbs.contentStart;
+    let element = readDerElement(der, offset);
+    if (element.tag === 0xa0) {
+      offset = element.end;
+    }
+    for (let i = 0; i < 5; i += 1) {
+      element = readDerElement(der, offset);
+      offset = element.end;
+    }
+    const spki = readDerElement(der, offset);
+    return `-----BEGIN PUBLIC KEY-----\n${chunkBase64(bytesToBase64(der.slice(spki.start, spki.end)))}\n-----END PUBLIC KEY-----`;
+  } catch {
+    return "";
+  }
+}
+
+function readDerElement(bytes, offset) {
+  const start = offset;
+  const tag = bytes[offset++];
+  let length = bytes[offset++];
+  if (length & 0x80) {
+    const lengthBytes = length & 0x7f;
+    length = 0;
+    for (let i = 0; i < lengthBytes; i += 1) length = (length << 8) + bytes[offset++];
+  }
+  return { tag, start, contentStart: offset, contentEnd: offset + length, end: offset + length };
+}
+
+function isWechatPayNotification(headers, body) {
+  return Boolean(headers.get("wechatpay-signature") || headers.get("wechatpay-timestamp") || body?.resource?.ciphertext);
 }
 
 function validateToolInput(toolId, fields) {
@@ -793,7 +870,136 @@ async function createStripeCheckout(env, order, plan, user) {
   return data.url;
 }
 
+async function createWeChatNativeOrder(env, order, plan) {
+  const config = wechatPayConfig(env);
+  if (!wechatPayReady(env).orders) {
+    throw new HttpError(400, "未完整配置微信支付，需填写 WECHAT_PAY_APP_ID、WECHAT_PAY_MCH_ID、WECHAT_PAY_MCH_SERIAL_NO、WECHAT_PAY_PRIVATE_KEY、WECHAT_PAY_API_V3_KEY");
+  }
+
+  const requestPath = "/v3/pay/transactions/native";
+  const payload = {
+    appid: config.appId,
+    mchid: config.mchId,
+    description: `MUN Copilot ${plan.name}`.slice(0, 127),
+    out_trade_no: order.id,
+    attach: order.id,
+    notify_url: config.notifyUrl,
+    amount: {
+      total: plan.priceCents,
+      currency: "CNY"
+    }
+  };
+  const bodyText = JSON.stringify(payload);
+  const authorization = await createWeChatPayAuthorization("POST", requestPath, bodyText, config);
+  const response = await fetch(`https://api.mch.weixin.qq.com${requestPath}`, {
+    method: "POST",
+    headers: {
+      authorization,
+      accept: "application/json",
+      "content-type": "application/json"
+    },
+    body: bodyText
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new HttpError(502, data.message || data.code || "微信支付下单失败");
+  if (!data.code_url) throw new HttpError(502, "微信支付没有返回二维码链接");
+  order.providerPayload = {
+    codeUrl: data.code_url,
+    notifyUrl: config.notifyUrl,
+    createdAt: nowIso()
+  };
+  return {
+    checkoutUrl: `${frontendBaseUrl(env)}/#checkout=${order.id}`,
+    payment: {
+      type: "wechat_native",
+      codeUrl: data.code_url,
+      notifyUrl: config.notifyUrl
+    }
+  };
+}
+
+async function createWeChatPayAuthorization(method, requestPath, bodyText, config) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const nonce = randomHex(16);
+  const message = `${method}\n${requestPath}\n${timestamp}\n${nonce}\n${bodyText}\n`;
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    pemToBytes(config.privateKey, "PRIVATE KEY"),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signatureBytes = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, encode(message));
+  const signature = bytesToBase64(new Uint8Array(signatureBytes));
+  return `WECHATPAY2-SHA256-RSA2048 mchid="${config.mchId}",nonce_str="${nonce}",timestamp="${timestamp}",serial_no="${config.serialNo}",signature="${signature}"`;
+}
+
+async function verifyWeChatPaySignature(env, rawBody, headers) {
+  const config = wechatPayConfig(env);
+  if (!config.publicKey) return false;
+  const timestamp = headers.get("wechatpay-timestamp");
+  const nonce = headers.get("wechatpay-nonce");
+  const signature = headers.get("wechatpay-signature");
+  if (!timestamp || !nonce || !signature) return false;
+  const publicKey = await crypto.subtle.importKey(
+    "spki",
+    pemToBytes(config.publicKey, "PUBLIC KEY"),
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+  return crypto.subtle.verify("RSASSA-PKCS1-v1_5", publicKey, base64ToBytes(signature), encode(`${timestamp}\n${nonce}\n${rawBody}\n`));
+}
+
+async function decryptWeChatPayResource(env, resource) {
+  const config = wechatPayConfig(env);
+  if (!config.apiV3Key) throw new HttpError(400, "缺少 WECHAT_PAY_API_V3_KEY，无法解密微信支付通知");
+  if (resource?.algorithm !== "AEAD_AES_256_GCM") throw new HttpError(400, "不支持的微信支付通知加密算法");
+  const key = await crypto.subtle.importKey("raw", encode(config.apiV3Key), "AES-GCM", false, ["decrypt"]);
+  const decrypted = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: encode(resource.nonce || ""),
+      additionalData: encode(resource.associated_data || ""),
+      tagLength: 128
+    },
+    key,
+    base64ToBytes(resource.ciphertext || "")
+  );
+  return JSON.parse(bytesToUtf8(new Uint8Array(decrypted)));
+}
+
+async function handleWeChatPayNotification(env, db, body, rawBody, headers) {
+  if (isProduction(env) && !(await verifyWeChatPaySignature(env, rawBody, headers))) {
+    throw new HttpError(401, "微信支付通知签名验证失败，请配置 WECHAT_PAY_PUBLIC_KEY_PEM 或 WECHAT_PAY_PLATFORM_CERT_PEM");
+  }
+  const transaction = await decryptWeChatPayResource(env, body.resource || {});
+  const orderId = transaction.out_trade_no || transaction.attach;
+  const order = db.orders[orderId];
+  if (!order) throw new HttpError(400, "订单不存在");
+  if (order.provider !== "wechat") throw new HttpError(400, "订单支付方式不匹配");
+  if (transaction.mchid && transaction.mchid !== wechatPayConfig(env).mchId) throw new HttpError(400, "微信支付商户号不匹配");
+  if (Number(transaction.amount?.total) !== Number(order.amountCents)) throw new HttpError(400, "微信支付金额不匹配");
+  order.providerEvent = body.event_type || transaction.trade_state || "wechatpay_notify";
+  order.transactionId = transaction.transaction_id || order.transactionId;
+  order.wechatTradeState = transaction.trade_state || "";
+  if (transaction.trade_state === "SUCCESS" && order.status !== "paid") {
+    const user = db.users[order.userId];
+    order.status = "paid";
+    order.paidAt = nowIso();
+    applyPlanOrCredits(user, order.planId);
+  }
+  return order;
+}
+
 function productionChecks(env) {
+  const defaultProvider = defaultPaymentProvider(env);
+  const stripeWebhookReady = Boolean(env.STRIPE_WEBHOOK_SECRET || env.PAYMENT_WEBHOOK_SECRET);
+  const paymentWebhookReady = defaultProvider === "wechat"
+    ? wechatPayReady(env).webhook
+    : defaultProvider === "stripe"
+      ? stripeWebhookReady
+      : !isProduction(env);
   const checks = [
     { id: "openai", label: "OpenAI API", ok: Boolean(env.OPENAI_API_KEY), detail: env.OPENAI_API_KEY ? `已配置 ${env.OPENAI_MODEL || "gpt-5"}` : "缺少 OPENAI_API_KEY，当前只能演示输出。" },
     { id: "kv", label: "Cloudflare KV", ok: Boolean(env.MUN_DB), detail: env.MUN_DB ? "已绑定 MUN_DB" : "缺少 KV 绑定 MUN_DB。" },
@@ -801,8 +1007,8 @@ function productionChecks(env) {
     { id: "domain", label: "前端网站域名", ok: !isProduction(env) || new URL(frontendBaseUrl(env)).hostname === "ericeva0130.ccwu.cc", detail: frontendBaseUrl(env) },
     { id: "api_domain", label: "后台服务域名", ok: !isProduction(env) || new URL(apiBaseUrl(env)).hostname === "qinghaxinyu.ccwu.cc", detail: apiBaseUrl(env) },
     { id: "cors", label: "API 跨域", ok: !isProduction(env) || allowedOrigins(env).includes("*") || allowedOrigins(env).includes(new URL(frontendBaseUrl(env)).origin), detail: allowedOrigins(env).join(", ") || "未配置" },
-    { id: "payment", label: "真实支付", ok: !isProduction(env) || paymentProviders(env).some((provider) => provider.id === "stripe"), detail: paymentProviders(env).length ? paymentProviders(env).map((provider) => provider.name).join(" / ") : "生产环境必须配置 STRIPE_SECRET_KEY 和 STRIPE_WEBHOOK_SECRET。" },
-    { id: "webhook", label: "Stripe Webhook", ok: !isProduction(env) || Boolean(env.STRIPE_WEBHOOK_SECRET || env.PAYMENT_WEBHOOK_SECRET), detail: env.STRIPE_WEBHOOK_SECRET ? "已配置签名密钥" : "缺少 STRIPE_WEBHOOK_SECRET。" },
+    { id: "payment", label: "真实支付", ok: !isProduction(env) || paymentProviders(env).some((provider) => ["wechat", "stripe"].includes(provider.id)), detail: paymentProviders(env).length ? paymentProviders(env).map((provider) => provider.name).join(" / ") : "生产环境必须配置微信支付或 Stripe。" },
+    { id: "webhook", label: "支付回调", ok: !isProduction(env) || paymentWebhookReady, detail: wechatPayReady(env).webhook ? "微信支付回调验签和解密已配置" : stripeWebhookReady && defaultProvider === "stripe" ? "Stripe Webhook 已配置" : "缺少微信支付 APIv3 密钥/公钥或 Stripe Webhook 密钥。" },
     { id: "admin_secret", label: "后台密钥", ok: Boolean(env.ADMIN_SECRET) && env.ADMIN_SECRET !== "change-this-admin-secret", detail: env.ADMIN_SECRET && env.ADMIN_SECRET !== "change-this-admin-secret" ? "已配置" : "请把 ADMIN_SECRET 换成一串很长的随机密钥。" }
   ];
   return { ok: checks.every((check) => check.ok), checks };
@@ -830,6 +1036,8 @@ function adminOverview(env, db) {
     endpoints: {
       frontendBaseUrl: frontendBaseUrl(env),
       apiBaseUrl: apiBaseUrl(env),
+      paymentWebhookUrl: `${apiBaseUrl(env)}/api/payments/wechat/notify`,
+      wechatWebhookUrl: `${apiBaseUrl(env)}/api/payments/wechat/notify`,
       stripeWebhookUrl: `${apiBaseUrl(env)}/api/payments/webhook`
     },
     stats: {
@@ -893,6 +1101,37 @@ function randomHex(bytes) {
 
 function bytesToHex(bytes) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const normalized = String(value || "").replace(/\s/g, "");
+  const binary = atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToUtf8(bytes) {
+  return new TextDecoder().decode(bytes);
+}
+
+function pemToBytes(pem, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(pem || "").replace(/\\n/g, "\n").match(new RegExp(`-----BEGIN ${escaped}-----([\\s\\S]+?)-----END ${escaped}-----`));
+  if (!match) throw new Error(`Invalid ${label} PEM`);
+  return base64ToBytes(match[1]);
+}
+
+function chunkBase64(value) {
+  return String(value).match(/.{1,64}/g)?.join("\n") || "";
 }
 
 function hexToBytes(hex) {

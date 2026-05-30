@@ -6,7 +6,81 @@
 2. OpenAI API Key：填到服务器环境变量 `OPENAI_API_KEY`。
 3. 真实支付：推荐先接 Stripe Checkout，填 `STRIPE_SECRET_KEY` 和 `STRIPE_WEBHOOK_SECRET`。
 
-## 推荐方案：Render
+## 推荐方案：Cloudflare Pages + Pages Functions
+
+现在项目已经支持 Cloudflare 原生部署：
+
+- `public/` 是静态前端
+- `functions/api/[[path]].js` 是后端 API
+- Cloudflare KV 保存用户、订单、额度和生成记录
+
+### Cloudflare Pages 构建设置
+
+从 GitHub 导入 `enshuwu46-png/mun-copilot` 后填写：
+
+```text
+Framework preset: None
+Build command: 留空
+Build output directory: public
+Functions directory: functions
+```
+
+### Cloudflare KV
+
+在 Cloudflare 创建一个 KV namespace，例如：
+
+```text
+mun-copilot-db
+```
+
+然后在 Pages 项目里绑定：
+
+```text
+Variable name: MUN_DB
+KV namespace: mun-copilot-db
+```
+
+### Cloudflare 环境变量
+
+生产环境变量：
+
+```bash
+NODE_ENV=production
+FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5
+PAYMENT_PROVIDER=stripe
+STRIPE_SECRET_KEY=sk_live_or_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+ADMIN_SECRET=一串很长的随机密钥
+```
+
+### 当前域名绑定
+
+推荐把两个自定义域名都绑定到同一个 Cloudflare Pages 项目：
+
+```text
+ericeva0130.ccwu.cc      -> Pages 项目，用作用户访问前端
+qinghaxinyu.ccwu.cc      -> 同一个 Pages 项目，用作 API 后台域名
+```
+
+前端访问 `ericeva0130.ccwu.cc` 时，会自动请求：
+
+```text
+https://qinghaxinyu.ccwu.cc/api/...
+```
+
+部署成功后，先打开：
+
+```text
+https://qinghaxinyu.ccwu.cc/api/health
+```
+
+它应该返回 JSON，而不是 HTML。
+
+## 备选方案：Render
 
 1. 把这个项目推到 GitHub。
 2. 在 Render 新建 Web Service，选择这个仓库。
@@ -42,7 +116,7 @@ ADMIN_SECRET=一串很长的随机密钥
 
 `render.yaml` 已经配置了 `/app/data` 持久化磁盘，用来保存当前 JSON 数据库。后续用户变多时，再把它换成 PostgreSQL。
 
-## Cloudflare 域名配置
+## Cloudflare 域名配置提醒
 
 你现在的推荐结构是：
 
@@ -57,7 +131,7 @@ qinghaxinyu.ccwu.cc      -> Render/Railway/Fly/VPS 上的 Node 后端
 https://qinghaxinyu.ccwu.cc/api/...
 ```
 
-所以 Cloudflare 不需要把 `/api/*` 代理到前端项目里，但后台域名必须能访问到正在运行的 `node server.js` 服务。若使用 Render，把 `qinghaxinyu.ccwu.cc` 作为 Custom Domain 添加到 Render Web Service，然后按 Render 提示在 Cloudflare DNS 里添加 CNAME。
+如果使用上面的 Cloudflare Pages Functions 方案，两个域名可以都绑定到同一个 Pages 项目。如果使用 Render 方案，则 `qinghaxinyu.ccwu.cc` 必须指向 Render 后端服务。
 
 ## 上线前检查
 

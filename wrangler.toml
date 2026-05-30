@@ -1,0 +1,6 @@
+name = "mun-copilot"
+compatibility_date = "2026-05-30"
+pages_build_output_dir = "public"
+
+# Cloudflare Pages needs a KV namespace binding named MUN_DB.
+# Configure it in Pages -> Settings -> Functions -> KV namespace bindings.

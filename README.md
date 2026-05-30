@@ -28,12 +28,16 @@ ADMIN_SECRET=你的后台密钥
 
 ## 公网上线
 
-看 `DEPLOYMENT.md`。最少需要配置：
+看 `DEPLOYMENT.md`。现在优先走 Cloudflare Pages + Pages Functions：
+
+- 静态前端在 `public/`
+- 后端接口在 `functions/api/[[path]].js`
+- 数据存储用 Cloudflare KV，绑定名必须叫 `MUN_DB`
+
+最少需要配置：
 
 ```bash
 NODE_ENV=production
-HOST=0.0.0.0
-DATA_DIR=/app/data
 FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
@@ -85,9 +89,27 @@ ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
 
 当前前端会在 `ericeva0130.ccwu.cc` 自动请求 `qinghaxinyu.ccwu.cc` 的 API。后台服务已带 CORS 配置，生产环境要把 `ALLOWED_ORIGINS` 保持为这两个域名。
 
+## Cloudflare 绑定
+
+Cloudflare Pages 构建设置：
+
+```text
+Build command: 留空
+Build output directory: public
+Functions directory: functions
+```
+
+Pages 项目需要在 Settings -> Functions 绑定一个 KV namespace：
+
+```text
+Variable name: MUN_DB
+```
+
+绑定好以后，`https://qinghaxinyu.ccwu.cc/api/health` 应该返回 JSON。
+
 ## 安全边界
 
-- API Key 只在 `server.js` 里读取环境变量，前端拿不到。
+- API Key 只在后端环境变量里读取，前端拿不到。
 - 每次生成都会扣额度，避免“无限用”亏损。
 - 有基础 IP 限流、输入长度限制、每日额度和额外次数。
 - 学习类工具的提示词定位为“训练、讲解、改写建议”，避免把产品做成代写工具。

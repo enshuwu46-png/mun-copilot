@@ -27,11 +27,11 @@ services:
       - key: MANUAL_PAYMENT_DESCRIPTION
         value: 扫码或转账后由管理员确认到账。
       - key: FRONTEND_BASE_URL
-        value: https://ericeva0130.ccwu.cc
+        value: https://educopilot.ccwu.cc
       - key: PUBLIC_BASE_URL
         value: https://qinghaxinyu.ccwu.cc
       - key: ALLOWED_ORIGINS
-        value: https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
+        value: https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
       - key: OPENAI_API_KEY
         sync: false
       - key: WECHAT_PAY_APP_ID

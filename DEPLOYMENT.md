@@ -46,9 +46,9 @@ KV namespace: mun-copilot-db
 
 ```bash
 NODE_ENV=production
-FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+FRONTEND_BASE_URL=https://educopilot.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
-ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
 PAYMENT_PROVIDER=manual
@@ -64,11 +64,11 @@ ADMIN_SECRET=一串很长的随机密钥
 推荐把两个自定义域名都绑定到同一个 Cloudflare Pages 项目：
 
 ```text
-ericeva0130.ccwu.cc      -> Pages 项目，用作用户访问前端
+educopilot.ccwu.cc      -> Pages 项目，用作用户访问前端
 qinghaxinyu.ccwu.cc      -> 同一个 Pages 项目，用作 API 后台域名
 ```
 
-前端访问 `ericeva0130.ccwu.cc` 时，会自动请求：
+前端访问 `educopilot.ccwu.cc` 时，会自动请求：
 
 ```text
 https://qinghaxinyu.ccwu.cc/api/...
@@ -94,7 +94,7 @@ node server.js
 
 4. 环境变量按 `.env.production.example` 填。当前域名分工是：
 
-- 前端网站：`https://ericeva0130.ccwu.cc`
+- 前端网站：`https://educopilot.ccwu.cc`
 - 后台/API：`https://qinghaxinyu.ccwu.cc`
 
 后端服务环境变量：
@@ -103,9 +103,9 @@ node server.js
 NODE_ENV=production
 HOST=0.0.0.0
 DATA_DIR=/app/data
-FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+FRONTEND_BASE_URL=https://educopilot.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
-ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
 PAYMENT_PROVIDER=manual
@@ -125,11 +125,11 @@ ADMIN_SECRET=一串很长的随机密钥
 你现在的推荐结构是：
 
 ```text
-ericeva0130.ccwu.cc      -> Cloudflare Pages 静态前端
+educopilot.ccwu.cc      -> Cloudflare Pages 静态前端
 qinghaxinyu.ccwu.cc      -> Render/Railway/Fly/VPS 上的 Node 后端
 ```
 
-前端代码会在访问 `ericeva0130.ccwu.cc` 时自动请求：
+前端代码会在访问 `educopilot.ccwu.cc` 时自动请求：
 
 ```text
 https://qinghaxinyu.ccwu.cc/api/...
@@ -207,5 +207,5 @@ docker run -p 3000:3000 --env-file .env.production mun-copilot
 - 不要把 `.env`、OpenAI Key、微信支付私钥/APIv3 密钥上传到 GitHub。
 - `FRONTEND_BASE_URL` 必须是用户实际访问的前端网站地址。
 - `PUBLIC_BASE_URL` 是后台/API 的公网地址，微信支付回调和跨域请求会用到它；人工收款只需要后台能访问。
-- `ALLOWED_ORIGINS` 至少包含 `https://ericeva0130.ccwu.cc`，否则前端会被浏览器拦截跨域请求。
+- `ALLOWED_ORIGINS` 至少包含 `https://educopilot.ccwu.cc`，否则前端会被浏览器拦截跨域请求。
 - 后台可以查看用户、订单、营收、生成量，也可以手动确认人工收款订单。

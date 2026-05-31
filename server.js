@@ -12,7 +12,7 @@ const PORT = Number(process.env.PORT || 3000);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const HOST = process.env.HOST || (IS_PRODUCTION ? "0.0.0.0" : "127.0.0.1");
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-5";
-const PRODUCTION_FRONTEND_BASE_URL = "https://ericeva0130.ccwu.cc";
+const PRODUCTION_FRONTEND_BASE_URL = "https://educopilot.ccwu.cc";
 const PRODUCTION_API_BASE_URL = "https://qinghaxinyu.ccwu.cc";
 const LOCAL_BASE_URL = `http://${HOST}:${PORT}`;
 const FRONTEND_BASE_URL = process.env.FRONTEND_BASE_URL || process.env.PUBLIC_SITE_URL || (IS_PRODUCTION ? PRODUCTION_FRONTEND_BASE_URL : LOCAL_BASE_URL);
@@ -539,7 +539,7 @@ function productionChecks() {
     {
       id: "domain",
       label: "前端网站域名",
-      ok: !IS_PRODUCTION || new URL(FRONTEND_BASE_URL).hostname === "ericeva0130.ccwu.cc",
+      ok: !IS_PRODUCTION || new URL(FRONTEND_BASE_URL).hostname === "educopilot.ccwu.cc",
       detail: FRONTEND_BASE_URL
     },
     {

@@ -1,4 +1,4 @@
-const DEFAULT_FRONTEND_BASE_URL = "https://ericeva0130.ccwu.cc";
+const DEFAULT_FRONTEND_BASE_URL = "https://educopilot.ccwu.cc";
 const DEFAULT_API_BASE_URL = "https://qinghaxinyu.ccwu.cc";
 const DB_KEY = "mun-copilot-db";
 
@@ -1044,7 +1044,7 @@ function productionChecks(env) {
     { id: "openai", label: "OpenAI API", ok: Boolean(env.OPENAI_API_KEY), detail: env.OPENAI_API_KEY ? `已配置 ${env.OPENAI_MODEL || "gpt-5"}` : "缺少 OPENAI_API_KEY，当前只能演示输出。" },
     { id: "kv", label: "Cloudflare KV", ok: Boolean(env.MUN_DB), detail: env.MUN_DB ? "已绑定 MUN_DB" : "缺少 KV 绑定 MUN_DB。" },
     { id: "public_url", label: "后台 API 域名", ok: /^https:\/\//.test(apiBaseUrl(env)) || !isProduction(env), detail: apiBaseUrl(env) },
-    { id: "domain", label: "前端网站域名", ok: !isProduction(env) || new URL(frontendBaseUrl(env)).hostname === "ericeva0130.ccwu.cc", detail: frontendBaseUrl(env) },
+    { id: "domain", label: "前端网站域名", ok: !isProduction(env) || new URL(frontendBaseUrl(env)).hostname === "educopilot.ccwu.cc", detail: frontendBaseUrl(env) },
     { id: "api_domain", label: "后台服务域名", ok: !isProduction(env) || new URL(apiBaseUrl(env)).hostname === "qinghaxinyu.ccwu.cc", detail: apiBaseUrl(env) },
     { id: "cors", label: "API 跨域", ok: !isProduction(env) || allowedOrigins(env).includes("*") || allowedOrigins(env).includes(new URL(frontendBaseUrl(env)).origin), detail: allowedOrigins(env).join(", ") || "未配置" },
     { id: "payment", label: "真实支付", ok: !isProduction(env) || paymentProviders(env).some((provider) => ["manual", "wechat", "stripe"].includes(provider.id)), detail: paymentProviders(env).length ? paymentProviders(env).map((provider) => provider.name).join(" / ") : "生产环境必须配置人工收款、微信支付或 Stripe。" },

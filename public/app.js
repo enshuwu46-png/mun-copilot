@@ -1,5 +1,5 @@
 const APP_CONFIG = window.MUN_COPILOT_CONFIG || {};
-const PRODUCTION_FRONTEND_HOST = "ericeva0130.ccwu.cc";
+const PRODUCTION_FRONTEND_HOST = "educopilot.ccwu.cc";
 const PRODUCTION_API_BASE_URL = "https://qinghaxinyu.ccwu.cc";
 const API_BASE_URL = String(
   APP_CONFIG.apiBaseUrl || (window.location.hostname === PRODUCTION_FRONTEND_HOST ? PRODUCTION_API_BASE_URL : "")
@@ -742,7 +742,7 @@ function renderAdminDashboard(data) {
         <div class="check-list">
           <div class="check-item ok">
             <strong>前端网站</strong>
-            <span>${escapeHtml(endpoints.frontendBaseUrl || "https://ericeva0130.ccwu.cc")}</span>
+            <span>${escapeHtml(endpoints.frontendBaseUrl || "https://educopilot.ccwu.cc")}</span>
           </div>
           <div class="check-item ok">
             <strong>后台 API</strong>

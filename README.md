@@ -38,9 +38,9 @@ ADMIN_SECRET=你的后台密钥
 
 ```bash
 NODE_ENV=production
-FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+FRONTEND_BASE_URL=https://educopilot.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
-ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 PAYMENT_PROVIDER=manual
 ALLOW_MANUAL_PAYMENT=true
@@ -97,20 +97,20 @@ WECHAT_PAY_MCH_SERIAL_NO=商户 API 证书序列号
 WECHAT_PAY_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 WECHAT_PAY_API_V3_KEY=32位APIv3密钥
 WECHAT_PAY_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
-FRONTEND_BASE_URL=https://ericeva0130.ccwu.cc
+FRONTEND_BASE_URL=https://educopilot.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
-ALLOWED_ORIGINS=https://ericeva0130.ccwu.cc,https://qinghaxinyu.ccwu.cc
+ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
 ```
 
 创建订单接口会调用微信支付 API v3 Native 下单，前端显示微信二维码。微信支付通知会先验签，再用 `WECHAT_PAY_API_V3_KEY` 解密通知资源；确认 `trade_state=SUCCESS`、金额和商户号一致后自动给用户开通套餐或加额度。
 
 ## 当前域名分工
 
-- 前端网站：`https://ericeva0130.ccwu.cc`
+- 前端网站：`https://educopilot.ccwu.cc`
 - 后台/API：`https://qinghaxinyu.ccwu.cc`
 - 微信支付回调：`https://qinghaxinyu.ccwu.cc/api/payments/wechat/notify`
 
-当前前端会在 `ericeva0130.ccwu.cc` 自动请求 `qinghaxinyu.ccwu.cc` 的 API。后台服务已带 CORS 配置，生产环境要把 `ALLOWED_ORIGINS` 保持为这两个域名。
+当前前端会在 `educopilot.ccwu.cc` 自动请求 `qinghaxinyu.ccwu.cc` 的 API。后台服务已带 CORS 配置，生产环境要把 `ALLOWED_ORIGINS` 保持为这两个域名。
 
 ## Cloudflare 绑定
 

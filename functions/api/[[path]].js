@@ -1,6 +1,13 @@
 const DEFAULT_FRONTEND_BASE_URL = "https://educopilot.ccwu.cc";
 const DEFAULT_API_BASE_URL = "https://qinghaxinyu.ccwu.cc";
 const DB_KEY = "mun-copilot-db";
+const DEFAULT_OPENAI_MODEL = "gpt-5";
+const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
+const AI_PROVIDER_ORDER = ["deepseek", "openai"];
+const AI_PROVIDER_NAMES = {
+  deepseek: "DeepSeek",
+  openai: "OpenAI"
+};
 
 const PLANS = {
   free: {
@@ -229,13 +236,14 @@ async function handleApi(request, env) {
       time: nowIso(),
       mode: isProduction(env) ? "production" : "development",
       runtime: "cloudflare-pages-functions",
+      ai: aiStatus(env),
       openai: openAIStatus(env),
       readiness: productionChecks(env)
     });
   }
 
-  if (method === "GET" && pathname === "/api/openai/status") {
-    return json(request, env, 200, openAIStatus(env));
+  if (method === "GET" && (pathname === "/api/openai/status" || pathname === "/api/ai/status")) {
+    return json(request, env, 200, aiStatus(env));
   }
 
   if (method === "GET" && pathname === "/api/plans") {
@@ -400,7 +408,7 @@ async function handleApi(request, env) {
     if (!tool) throw new HttpError(400, "未知工具");
     const fields = validateToolInput(toolId, body.fields || {});
     assertQuotaAvailable(auth.user, tool.cost);
-    const ai = await callOpenAI(env, toolId, fields);
+    const ai = await callAI(env, toolId, fields, body.aiProvider);
     const quota = spendQuota(auth.user, tool.cost);
     const record = {
       id: `gen_${randomHex(8)}`,
@@ -409,6 +417,8 @@ async function handleApi(request, env) {
       toolTitle: tool.title,
       cost: tool.cost,
       charged: quota.charged,
+      provider: ai.provider,
+      providerName: ai.providerName,
       model: ai.model,
       demo: ai.demo,
       fields,
@@ -431,6 +441,9 @@ async function handleApi(request, env) {
         id: item.id,
         toolId: item.toolId,
         toolTitle: item.toolTitle,
+        provider: item.provider,
+        providerName: item.providerName,
+        model: item.model,
         output: item.output,
         demo: item.demo,
         createdAt: item.createdAt
@@ -809,15 +822,82 @@ function validateToolInput(toolId, fields) {
   return cleaned;
 }
 
-function openAIStatus(env) {
-  const configured = Boolean(env.OPENAI_API_KEY);
-  const model = env.OPENAI_MODEL || "gpt-5";
+function normalizeAIProvider(value) {
+  const provider = String(value || "").trim().toLowerCase();
+  return AI_PROVIDER_ORDER.includes(provider) ? provider : "";
+}
+
+function assertAIProvider(value) {
+  const provider = normalizeAIProvider(value);
+  if (!provider) throw new HttpError(400, "模型服务商无效，请选择 DeepSeek 或 OpenAI");
+  return provider;
+}
+
+function aiProviderConfig(env, provider) {
+  const id = assertAIProvider(provider);
+  if (id === "deepseek") {
+    const baseUrl = String(env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
+    const thinking = String(env.DEEPSEEK_THINKING || "disabled").toLowerCase() === "enabled" ? "enabled" : "disabled";
+    return {
+      id,
+      name: AI_PROVIDER_NAMES[id],
+      apiKey: env.DEEPSEEK_API_KEY || "",
+      model: env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
+      baseUrl,
+      thinking,
+      reasoningEffort: env.DEEPSEEK_REASONING_EFFORT || "high"
+    };
+  }
+  return {
+    id,
+    name: AI_PROVIDER_NAMES[id],
+    apiKey: env.OPENAI_API_KEY || "",
+    model: env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL
+  };
+}
+
+function configuredAIProviders(env) {
+  return AI_PROVIDER_ORDER.filter((provider) => Boolean(aiProviderConfig(env, provider).apiKey));
+}
+
+function defaultAIProvider(env) {
+  const preferred = normalizeAIProvider(env.DEFAULT_AI_PROVIDER || env.AI_PROVIDER);
+  if (preferred && aiProviderConfig(env, preferred).apiKey) return preferred;
+  return configuredAIProviders(env)[0] || preferred || "deepseek";
+}
+
+function aiStatus(env) {
+  const defaultProvider = defaultAIProvider(env);
+  const providers = AI_PROVIDER_ORDER.map((provider) => {
+    const config = aiProviderConfig(env, provider);
+    const configured = Boolean(config.apiKey);
+    return {
+      id: config.id,
+      name: config.name,
+      configured,
+      model: configured ? config.model : "未配置",
+      default: config.id === defaultProvider,
+      detail: configured ? `已配置 ${config.model}` : `缺少 ${config.id === "deepseek" ? "DEEPSEEK_API_KEY" : "OPENAI_API_KEY"}`
+    };
+  });
+  const configured = providers.some((provider) => provider.configured);
+  const current = aiProviderConfig(env, defaultProvider);
   return {
     configured,
-    mode: configured ? "openai" : "demo",
-    model: configured ? model : "demo",
-    message: configured ? "OpenAI API 已配置，生成会调用真实模型。" : "当前是演示模式。配置 OPENAI_API_KEY 后即可调用真实模型。"
+    mode: configured ? "live" : "demo",
+    defaultProvider,
+    provider: configured ? current.id : "demo",
+    providerName: configured ? current.name : "演示模式",
+    model: configured ? current.model : "demo",
+    providers,
+    message: configured
+      ? `默认使用 ${current.name} / ${current.model}，用户也可以在生成前切换服务商。`
+      : "当前是演示模式。配置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 后即可调用真实模型。"
   };
+}
+
+function openAIStatus(env) {
+  return aiStatus(env);
 }
 
 function demoResponse(toolId, fields) {
@@ -834,25 +914,68 @@ function demoResponse(toolId, fields) {
 3. 结尾给出可执行方案，避免只说“加强合作”“提高意识”这类空话。
 
 下一步：
-配置 OPENAI_API_KEY 后，这里会调用真实模型生成更完整的版本。`;
+配置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 后，这里会调用真实模型生成更完整的版本。`;
 }
 
-async function callOpenAI(env, toolId, fields) {
-  const apiKey = env.OPENAI_API_KEY;
+async function callOpenAIProvider(env, toolId, fields) {
+  const config = aiProviderConfig(env, "openai");
   const tool = TOOL_CONFIG[toolId];
-  const model = env.OPENAI_MODEL || "gpt-5";
-  if (!apiKey) return { text: demoResponse(toolId, fields), demo: true, model: "demo" };
-
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ model, instructions: tool.instructions, input: tool.buildPrompt(fields) })
+    headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: config.model, instructions: tool.instructions, input: tool.buildPrompt(fields) })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new HttpError(502, data.error?.message || `OpenAI API 请求失败：${response.status}`);
   const textOutput = extractOutputText(data);
   if (!textOutput) throw new HttpError(502, "模型没有返回文本内容");
-  return { text: textOutput, demo: false, model, responseId: data.id };
+  return { text: textOutput, demo: false, provider: "openai", providerName: "OpenAI", model: config.model, responseId: data.id };
+}
+
+async function callDeepSeekProvider(env, toolId, fields) {
+  const config = aiProviderConfig(env, "deepseek");
+  const tool = TOOL_CONFIG[toolId];
+  const body = {
+    model: config.model,
+    messages: [
+      { role: "system", content: tool.instructions },
+      { role: "user", content: tool.buildPrompt(fields) }
+    ],
+    thinking: { type: config.thinking },
+    stream: false
+  };
+  if (config.thinking === "enabled") body.reasoning_effort = config.reasoningEffort;
+
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new HttpError(502, data.error?.message || `DeepSeek API 请求失败：${response.status}`);
+  const textOutput = extractChatCompletionText(data);
+  if (!textOutput) throw new HttpError(502, "模型没有返回文本内容");
+  return { text: textOutput, demo: false, provider: "deepseek", providerName: "DeepSeek", model: config.model, responseId: data.id };
+}
+
+async function callAI(env, toolId, fields, requestedProvider) {
+  const provider = requestedProvider ? assertAIProvider(requestedProvider) : defaultAIProvider(env);
+  const config = aiProviderConfig(env, provider);
+  if (!config.apiKey) {
+    if (!configuredAIProviders(env).length) {
+      return {
+        text: demoResponse(toolId, fields),
+        demo: true,
+        provider,
+        providerName: config.name,
+        model: "demo"
+      };
+    }
+    throw new HttpError(400, `${config.name} API 未配置，请换一个服务商或联系管理员。`);
+  }
+  return provider === "deepseek"
+    ? callDeepSeekProvider(env, toolId, fields)
+    : callOpenAIProvider(env, toolId, fields);
 }
 
 function extractOutputText(data) {
@@ -864,6 +987,20 @@ function extractOutputText(data) {
     }
   }
   return chunks.join("\n").trim();
+}
+
+function extractChatCompletionText(data) {
+  const message = data.choices?.[0]?.message;
+  if (!message) return "";
+  if (typeof message.content === "string") return message.content.trim();
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((item) => typeof item === "string" ? item : item?.text || item?.content || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  return "";
 }
 
 async function createStripeCheckout(env, order, plan, user) {
@@ -1041,7 +1178,7 @@ function productionChecks(env) {
       ? stripeWebhookReady
       : defaultProvider === "manual" || !isProduction(env);
   const checks = [
-    { id: "openai", label: "OpenAI API", ok: Boolean(env.OPENAI_API_KEY), detail: env.OPENAI_API_KEY ? `已配置 ${env.OPENAI_MODEL || "gpt-5"}` : "缺少 OPENAI_API_KEY，当前只能演示输出。" },
+    { id: "ai", label: "AI 服务商", ok: Boolean(configuredAIProviders(env).length), detail: aiStatus(env).providers.map((provider) => `${provider.name}: ${provider.detail}`).join(" / ") },
     { id: "kv", label: "Cloudflare KV", ok: Boolean(env.MUN_DB), detail: env.MUN_DB ? "已绑定 MUN_DB" : "缺少 KV 绑定 MUN_DB。" },
     { id: "public_url", label: "后台 API 域名", ok: /^https:\/\//.test(apiBaseUrl(env)) || !isProduction(env), detail: apiBaseUrl(env) },
     { id: "domain", label: "前端网站域名", ok: !isProduction(env) || new URL(frontendBaseUrl(env)).hostname === "educopilot.ccwu.cc", detail: frontendBaseUrl(env) },
@@ -1098,6 +1235,8 @@ function adminOverview(env, db) {
       id: item.id,
       userEmail: db.users[item.userId]?.email || "未知用户",
       toolTitle: item.toolTitle,
+      provider: item.provider,
+      providerName: item.providerName,
       model: item.model,
       demo: item.demo,
       createdAt: item.createdAt

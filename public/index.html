@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MUN / 文科 Copilot</title>
-    <link rel="stylesheet" href="/styles.css?v=20260529-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260608-1" />
   </head>
   <body>
     <header class="topbar">
@@ -80,8 +80,12 @@
         <section class="model-panel">
           <div class="panel-heading compact">
             <h2>模型</h2>
-            <button id="testOpenAIButton" class="icon-button" type="button" title="检测 OpenAI" aria-label="检测 OpenAI">T</button>
+            <button id="testOpenAIButton" class="icon-button" type="button" title="检测模型服务" aria-label="检测模型服务">T</button>
           </div>
+          <label class="mini-label" for="aiProviderSelect">服务商</label>
+          <select id="aiProviderSelect" class="ai-provider-select">
+            <option value="">读取中</option>
+          </select>
           <div class="status-row">
             <span id="openaiStatusDot" class="status-dot"></span>
             <strong id="openaiMode">检测中</strong>
@@ -217,7 +221,7 @@
     </dialog>
 
     <div id="toast" class="toast hidden"></div>
-    <script src="/config.js?v=20260529-2"></script>
-    <script src="/app.js?v=20260529-2" defer></script>
+    <script src="/config.js?v=20260608-1"></script>
+    <script src="/app.js?v=20260608-1" defer></script>
   </body>
 </html>

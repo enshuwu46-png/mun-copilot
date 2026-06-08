@@ -16,6 +16,12 @@ services:
         value: 0.0.0.0
       - key: DATA_DIR
         value: /app/data
+      - key: DEFAULT_AI_PROVIDER
+        value: deepseek
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-flash
+      - key: DEEPSEEK_THINKING
+        value: disabled
       - key: OPENAI_MODEL
         value: gpt-5
       - key: PAYMENT_PROVIDER
@@ -33,6 +39,8 @@ services:
       - key: ALLOWED_ORIGINS
         value: https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
       - key: OPENAI_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
         sync: false
       - key: WECHAT_PAY_APP_ID
         sync: false

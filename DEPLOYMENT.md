@@ -3,7 +3,7 @@
 这份代码已经可以部署成公网网站。真正让“所有人都能用”，必须准备三样东西：
 
 1. 公网托管平台：Render、Railway、Fly.io、VPS 都可以。
-2. OpenAI API Key：填到服务器环境变量 `OPENAI_API_KEY`。
+2. AI API Key：至少配置 `DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`；默认推荐 DeepSeek 控制成本。
 3. 收款方式：没有营业执照先用人工收款；有商户号后再接微信支付 Native 扫码。
 
 ## 推荐方案：Cloudflare Pages + Pages Functions
@@ -51,6 +51,10 @@ PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
+DEFAULT_AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_THINKING=disabled
 PAYMENT_PROVIDER=manual
 ALLOW_MANUAL_PAYMENT=true
 MANUAL_PAYMENT_NAME=人工收款
@@ -108,6 +112,10 @@ PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5
+DEFAULT_AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_THINKING=disabled
 PAYMENT_PROVIDER=manual
 ALLOW_MANUAL_PAYMENT=true
 MANUAL_PAYMENT_NAME=人工收款
@@ -141,7 +149,7 @@ https://qinghaxinyu.ccwu.cc/api/...
 
 部署后打开网站底部的“运营后台”，输入 `ADMIN_SECRET`，点击“刷新运营看板”。生产自检里这些项都应该通过：
 
-- OpenAI API 已配置
+- AI 服务商已配置：DeepSeek 或 OpenAI 至少一个可用
 - 公网地址是 `https://...`
 - 收款方式已配置
 - 人工收款不需要支付平台回调，微信支付才需要回调验签

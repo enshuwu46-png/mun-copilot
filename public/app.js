@@ -155,6 +155,8 @@ const state = {
   plans: [],
   paymentProviders: [],
   defaultPaymentProvider: "",
+  aiProviders: [],
+  defaultAIProvider: localStorage.getItem("aiProvider") || "",
   production: false,
   activeTool: TOOLS[0].id,
   lastResult: ""
@@ -191,6 +193,7 @@ const els = {
   openaiMode: document.querySelector("#openaiMode"),
   openaiModel: document.querySelector("#openaiModel"),
   openaiHint: document.querySelector("#openaiHint"),
+  aiProviderSelect: document.querySelector("#aiProviderSelect"),
   testOpenAIButton: document.querySelector("#testOpenAIButton"),
   planGrid: document.querySelector("#planGrid"),
   providerSelect: document.querySelector("#providerSelect"),
@@ -338,7 +341,7 @@ function renderHistory(history = []) {
     <article class="history-item">
       <div class="history-meta">
         <strong>${item.toolTitle}</strong>
-        <span>${new Date(item.createdAt).toLocaleString()}</span>
+        <span>${escapeHtml(item.providerName || "模型")} / ${escapeHtml(item.model || "demo")} · ${new Date(item.createdAt).toLocaleString()}</span>
       </div>
       <div class="history-output">${escapeHtml(item.output)}</div>
       <button class="button ghost" type="button" data-history="${item.id}">放到结果区</button>
@@ -456,16 +459,54 @@ async function handleAuth(event) {
   }
 }
 
+function selectedAIProvider() {
+  return els.aiProviderSelect?.value || state.defaultAIProvider || "deepseek";
+}
+
+function renderAIProviders(status) {
+  const providers = status.providers || [];
+  state.aiProviders = providers;
+  const savedProvider = localStorage.getItem("aiProvider") || "";
+  const firstConfigured = providers.find((provider) => provider.configured)?.id || "";
+  const preferred = providers.find((provider) => provider.id === savedProvider && provider.configured)?.id
+    || providers.find((provider) => provider.id === status.defaultProvider && provider.configured)?.id
+    || firstConfigured
+    || status.defaultProvider
+    || "deepseek";
+  state.defaultAIProvider = preferred;
+
+  if (!providers.length) {
+    els.aiProviderSelect.innerHTML = `<option value="">模型未配置</option>`;
+    els.aiProviderSelect.disabled = true;
+    return;
+  }
+
+  els.aiProviderSelect.innerHTML = providers.map((provider) => `
+    <option value="${provider.id}" ${provider.configured ? "" : "disabled"}>
+      ${provider.name}${provider.configured ? "" : "（未配置）"}
+    </option>
+  `).join("");
+  els.aiProviderSelect.disabled = !providers.some((provider) => provider.configured);
+  els.aiProviderSelect.value = preferred;
+  localStorage.setItem("aiProvider", preferred);
+}
+
 async function loadOpenAIStatus(showResult = false) {
   try {
-    const status = await api("/api/openai/status");
+    const status = await api("/api/ai/status");
+    renderAIProviders(status);
     els.openaiStatusDot.classList.toggle("connected", status.configured);
-    els.openaiMode.textContent = status.configured ? "OpenAI 已连接" : "演示模式";
-    els.openaiModel.textContent = status.model || "--";
+    els.openaiMode.textContent = status.configured ? "模型已连接" : "演示模式";
+    const provider = status.providers?.find((item) => item.id === selectedAIProvider());
+    els.openaiModel.textContent = provider?.configured ? `${provider.name} / ${provider.model}` : (status.model || "--");
     els.openaiHint.textContent = status.message;
-    if (showResult) showToast(status.configured ? "OpenAI API 已连接" : "还没配置 OPENAI_API_KEY");
+    if (showResult) showToast(status.configured ? "模型服务已连接" : "还没配置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY");
   } catch (error) {
     els.openaiStatusDot.classList.remove("connected");
+    if (els.aiProviderSelect) {
+      els.aiProviderSelect.innerHTML = `<option value="">检测失败</option>`;
+      els.aiProviderSelect.disabled = true;
+    }
     els.openaiMode.textContent = "检测失败";
     els.openaiModel.textContent = "--";
     els.openaiHint.textContent = error.message;
@@ -495,14 +536,14 @@ async function generate(event) {
   try {
     const data = await api("/api/generate", {
       method: "POST",
-      body: { toolId: tool.id, fields }
+      body: { toolId: tool.id, fields, aiProvider: selectedAIProvider() }
     });
     state.user = data.user;
     state.lastResult = data.result.output;
     els.resultBox.textContent = data.result.output;
     renderUser();
     await loadHistory();
-    showToast(data.result.demo ? "演示内容已生成" : "生成完成");
+    showToast(data.result.demo ? "演示内容已生成" : `${data.result.providerName || "模型"} 生成完成`);
   } catch (error) {
     els.resultBox.textContent = "生成失败：" + error.message;
     showToast(error.message);
@@ -805,7 +846,7 @@ function renderAdminDashboard(data) {
                 <tr>
                   <td>${escapeHtml(item.userEmail)}</td>
                   <td>${escapeHtml(item.toolTitle)}</td>
-                  <td>${escapeHtml(item.model)}${item.demo ? " / demo" : ""}</td>
+                  <td>${escapeHtml(item.providerName || "模型")} / ${escapeHtml(item.model)}${item.demo ? " / demo" : ""}</td>
                   <td>${dateText(item.createdAt)}</td>
                 </tr>
               `).join("") || `<tr><td colspan="4">暂无生成记录</td></tr>`}
@@ -885,6 +926,13 @@ function bindEvents() {
   els.generatorForm.addEventListener("submit", generate);
   els.sampleButton.addEventListener("click", fillSample);
   els.clearFormButton.addEventListener("click", () => els.generatorForm.reset());
+  els.aiProviderSelect.addEventListener("change", () => {
+    localStorage.setItem("aiProvider", selectedAIProvider());
+    const provider = state.aiProviders.find((item) => item.id === selectedAIProvider());
+    if (provider) {
+      els.openaiModel.textContent = provider.configured ? `${provider.name} / ${provider.model}` : `${provider.name} 未配置`;
+    }
+  });
   els.copyButton.addEventListener("click", async () => {
     await navigator.clipboard.writeText(state.lastResult || els.resultBox.textContent);
     showToast("已复制");

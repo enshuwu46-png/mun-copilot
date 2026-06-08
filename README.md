@@ -10,14 +10,17 @@ npm start
 
 打开 `http://localhost:3000`。
 
-没有配置 `OPENAI_API_KEY` 时，生成接口会返回演示内容，方便测试登录、额度、套餐和支付流程。配置 Key 后，后端会调用 OpenAI Responses API，Key 不会暴露到前端。
+没有配置 `DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY` 时，生成接口会返回演示内容，方便测试登录、额度、套餐和支付流程。配置 Key 后，后端会按用户选择调用 DeepSeek 或 OpenAI，Key 不会暴露到前端。
 
 ## 环境变量
 
 复制 `.env.example` 到 `.env` 后按需填写：
 
 ```bash
-OPENAI_API_KEY=你的服务器端 API Key
+DEFAULT_AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的 DeepSeek API Key
+DEEPSEEK_MODEL=deepseek-v4-flash
+OPENAI_API_KEY=你的 OpenAI API Key
 OPENAI_MODEL=gpt-5
 PAYMENT_PROVIDER=mock
 DATA_DIR=./data
@@ -41,7 +44,12 @@ NODE_ENV=production
 FRONTEND_BASE_URL=https://educopilot.ccwu.cc
 PUBLIC_BASE_URL=https://qinghaxinyu.ccwu.cc
 ALLOWED_ORIGINS=https://educopilot.ccwu.cc,https://qinghaxinyu.ccwu.cc
+DEFAULT_AI_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_THINKING=disabled
 OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5
 PAYMENT_PROVIDER=manual
 ALLOW_MANUAL_PAYMENT=true
 MANUAL_PAYMENT_NAME=人工收款
@@ -58,7 +66,8 @@ ADMIN_SECRET=一串很长的随机密钥
 - `POST /api/auth/login` 登录
 - `GET /api/me` 当前用户、套餐和额度
 - `GET /api/plans` 套餐
-- `GET /api/openai/status` OpenAI 接入状态
+- `GET /api/ai/status` AI 服务商接入状态
+- `GET /api/openai/status` 兼容旧前端的 AI 状态别名
 - `POST /api/orders` 创建订单
 - `GET /api/orders` 我的订单
 - `POST /api/payments/mock/confirm` 本地模拟支付确认
